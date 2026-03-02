@@ -4,7 +4,7 @@ import re
 import os
 from bs4 import BeautifulSoup
 
-TOKEN = os.getenv("TOKEN")"
+TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start'])
