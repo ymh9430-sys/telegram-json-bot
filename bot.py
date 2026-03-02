@@ -8,13 +8,16 @@ bot = telebot.TeleBot(TOKEN)
 user_mode = {}
 
 def format_time(seconds):
-    try:
-        seconds = float(seconds)
-        minutes = int(seconds // 60)
-        remaining = seconds % 60
-        return f"{minutes:02d}:{remaining:06.3f}"
-    except:
-        return seconds
+    seconds = float(seconds)
+    minutes = int(seconds // 60)
+    remaining = seconds % 60
+    return f"{minutes:02d}:{remaining:06.3f}"
+
+def to_seconds(time_str):
+    if ":" in time_str:
+        parts = time_str.split(":")
+        return float(parts[0]) * 60 + float(parts[1])
+    return float(time_str)
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -40,16 +43,17 @@ def process_text(message):
     blocks = re.findall(r'\[(.*?)\].*?\n<(.*?)>', content, re.DOTALL)
 
     output_lines = []
+    used_times = set()
 
     for line_time, words_block in blocks:
-        # نحول وقت السطر للنظام الجديد
-        if ":" in line_time:
-            # لو جاي بصيغة 00:01.22 نحوله لثواني الأول
-            parts = line_time.split(":")
-            total_sec = float(parts[0]) * 60 + float(parts[1])
-            line_time_formatted = format_time(total_sec)
-        else:
-            line_time_formatted = format_time(line_time)
+        base_seconds = to_seconds(line_time)
+        
+        # منع التكرار
+        while round(base_seconds, 3) in used_times:
+            base_seconds += 0.001
+
+        used_times.add(round(base_seconds, 3))
+        line_time_formatted = format_time(base_seconds)
 
         words = words_block.split("|")
         new_line = f"[{line_time_formatted}]"
