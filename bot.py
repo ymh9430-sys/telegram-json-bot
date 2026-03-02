@@ -1,70 +1,81 @@
 import telebot
 import os
-from bs4 import BeautifulSoup
+import re
 
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
+user_mode = {}
+
+def format_time(seconds):
+    try:
+        seconds = float(seconds)
+        minutes = int(seconds // 60)
+        remaining = seconds % 60
+        return f"{minutes:02d}:{remaining:06.3f}"
+    except:
+        return seconds
+
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "ابعتلي ملف أو نص وأنا هستخرج كل كلمة مع توقيتها في TXT 👌")
+    bot.reply_to(message,
+        "اختار طريقة الإرسال:\n"
+        "1️⃣ اكتب text لإرسال الناتج كنص\n"
+        "2️⃣ اكتب file لإرسال الناتج كملف"
+    )
+
+@bot.message_handler(func=lambda m: m.text in ["text", "file"])
+def set_mode(message):
+    user_mode[message.chat.id] = message.text
+    bot.reply_to(message, "تمام 👌 ابعت النص دلوقتي")
 
 @bot.message_handler(content_types=['text'])
-def handle_text(message):
-    process_content(message, message.text)
-
-@bot.message_handler(content_types=['document'])
-def handle_file(message):
-    file_info = bot.get_file(message.document.file_id)
-    downloaded_file = bot.download_file(file_info.file_path)
-
-    file_name = message.document.file_name
-
-    with open(file_name, 'wb') as f:
-        f.write(downloaded_file)
-
-    with open(file_name, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
-
-    process_content(message, content)
-
-    os.remove(file_name)
-
-def process_content(message, content):
-    soup = BeautifulSoup(content, "lxml")
-
-    words = soup.find_all(class_="blyrics--word")
-
-    if not words:
-        bot.reply_to(message, "مش لاقي كلمات واضحة في الملف ❌")
+def process_text(message):
+    if message.text in ["text", "file"]:
         return
+
+    mode = user_mode.get(message.chat.id, "text")
+    content = message.text
+
+    blocks = re.findall(r'\[(.*?)\].*?\n<(.*?)>', content, re.DOTALL)
 
     output_lines = []
 
-    for word in words:
-        text = word.get("data-content", "").strip()
-        start_time = word.get("data-time")
-        duration = word.get("data-duration")
+    for line_time, words_block in blocks:
+        # نحول وقت السطر للنظام الجديد
+        if ":" in line_time:
+            # لو جاي بصيغة 00:01.22 نحوله لثواني الأول
+            parts = line_time.split(":")
+            total_sec = float(parts[0]) * 60 + float(parts[1])
+            line_time_formatted = format_time(total_sec)
+        else:
+            line_time_formatted = format_time(line_time)
 
-        if text and start_time and duration:
-            try:
-                start = float(start_time)
-                end = start + float(duration)
-                output_lines.append(f"{text} | {start:.3f} --> {end:.3f}")
-            except:
-                continue
+        words = words_block.split("|")
+        new_line = f"[{line_time_formatted}]"
 
-    if not output_lines:
-        bot.reply_to(message, "ملقتش توقيت صالح ❌")
+        for w in words:
+            parts = w.split(":")
+            if len(parts) == 3:
+                word = parts[0]
+                start = format_time(parts[1])
+                end = format_time(parts[2])
+                new_line += f"<{start}>{word}<{end}> "
+
+        output_lines.append(new_line.strip())
+
+    result = "\n".join(output_lines)
+
+    if not result:
+        bot.reply_to(message, "مش عرفت أحلل النص ❌")
         return
 
-    output_text = "\n".join(output_lines)
-
-    with open("output.txt", "w", encoding="utf-8") as f:
-        f.write(output_text)
-
-    bot.send_document(message.chat.id, open("output.txt", "rb"))
-
-    os.remove("output.txt")
+    if mode == "file" or len(result) > 4000:
+        with open("output.txt", "w", encoding="utf-8") as f:
+            f.write(result)
+        bot.send_document(message.chat.id, open("output.txt", "rb"))
+        os.remove("output.txt")
+    else:
+        bot.reply_to(message, result)
 
 bot.infinity_polling()
