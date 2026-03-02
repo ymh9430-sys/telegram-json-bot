@@ -1,21 +1,17 @@
 import telebot
-import json
 import os
 from bs4 import BeautifulSoup
 
-# بياخد التوكن من Railway Variables
 TOKEN = os.getenv("TOKEN")
-
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "ابعتلي ملف HTML أو نص فيه بيانات وأنا هستخرجه لك 👌")
+    bot.reply_to(message, "ابعتلي ملف أو نص وأنا هستخرج كل كلمة مع توقيتها في TXT 👌")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
-    content = message.text
-    process_content(message, content)
+    process_content(message, message.text)
 
 @bot.message_handler(content_types=['document'])
 def handle_file(message):
@@ -37,32 +33,38 @@ def handle_file(message):
 def process_content(message, content):
     soup = BeautifulSoup(content, "lxml")
 
-    lines_data = []
-    lines = soup.find_all(class_="blyrics--line")
+    words = soup.find_all(class_="blyrics--word")
 
-    for line in lines:
-        time = line.get("data-time")
-        duration = line.get("data-duration")
-        line_number = line.get("data-line-number")
+    if not words:
+        bot.reply_to(message, "مش لاقي كلمات واضحة في الملف ❌")
+        return
 
-        words = line.find_all(class_="blyrics--word")
-        text = "".join(word.get("data-content", "") for word in words)
+    output_lines = []
 
-        if text.strip():
-            lines_data.append({
-                "line_number": line_number,
-                "time": time,
-                "duration": duration,
-                "text": text.strip()
-            })
+    for word in words:
+        text = word.get("data-content", "").strip()
+        start_time = word.get("data-time")
+        duration = word.get("data-duration")
 
-    if lines_data:
-        with open("output.json", "w", encoding="utf-8") as f:
-            json.dump(lines_data, f, ensure_ascii=False, indent=2)
+        if text and start_time and duration:
+            try:
+                start = float(start_time)
+                end = start + float(duration)
+                output_lines.append(f"{text} | {start:.3f} --> {end:.3f}")
+            except:
+                continue
 
-        bot.send_document(message.chat.id, open("output.json", "rb"))
-        os.remove("output.json")
-    else:
-        bot.reply_to(message, "مش لاقي بيانات lyrics واضحة في الملف ❌")
+    if not output_lines:
+        bot.reply_to(message, "ملقتش توقيت صالح ❌")
+        return
+
+    output_text = "\n".join(output_lines)
+
+    with open("output.txt", "w", encoding="utf-8") as f:
+        f.write(output_text)
+
+    bot.send_document(message.chat.id, open("output.txt", "rb"))
+
+    os.remove("output.txt")
 
 bot.infinity_polling()
