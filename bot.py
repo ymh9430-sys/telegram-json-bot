@@ -32,18 +32,15 @@ def yt(message):
     try:
         url = message.text.split(" ",1)[1]
 
-        bot.reply_to(message,"جاري جلب الكلمات...")
+        bot.reply_to(message,"جاري جلب الصفحة...")
 
         html = get_lyrics_from_ytmusic(url)
 
-        # استخراج نص بسيط كبداية
         text = re.sub("<.*?>","",html)
 
         result = text[:3500]
 
         bot.send_message(message.chat.id,result)
 
-    except:
-        bot.reply_to(message,"حصل خطأ")
-
-bot.infinity_polling()
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Error:\n{e}")
