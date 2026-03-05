@@ -1,67 +1,49 @@
 import telebot
 import os
-import asyncio
-from playwright.async_api import async_playwright
+import re
+from playwright.sync_api import sync_playwright
 
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-async def get_lyrics_from_ytmusic(url):
+def get_lyrics_from_ytmusic(url):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-    async with async_playwright() as p:
+        page.goto(url)
 
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        # نستنى الصفحة تحمل
+        page.wait_for_timeout(8000)
 
-        await page.goto(url)
+        # نحاول نجيب النص من الصفحة
+        content = page.content()
 
-        await page.wait_for_timeout(8000)
+        browser.close()
 
-        try:
-            lyrics = await page.inner_text("ytmusic-description-shelf-renderer")
-        except:
-            lyrics = "❌ لم أستطع استخراج الكلمات"
-
-        await browser.close()
-
-        return lyrics
-
+        return content
 
 @bot.message_handler(commands=['start'])
 def start(message):
-
-    bot.reply_to(
-        message,
-        "ابعت لينك الأغنية من YouTube Music بهذا الشكل:\n\n"
-        "/yt link"
-    )
-
+    bot.reply_to(message,"ابعت:\n/yt رابط الأغنية من YouTube Music")
 
 @bot.message_handler(commands=['yt'])
-def get_lyrics(message):
-
+def yt(message):
     try:
-
         url = message.text.split(" ",1)[1]
 
-        bot.reply_to(message,"⏳ جاري استخراج الكلمات...")
+        bot.reply_to(message,"جاري جلب الكلمات...")
 
-        lyrics = asyncio.run(get_lyrics_from_ytmusic(url))
+        html = get_lyrics_from_ytmusic(url)
 
-        if len(lyrics) > 3500:
+        # استخراج نص بسيط كبداية
+        text = re.sub("<.*?>","",html)
 
-            with open("lyrics.txt","w",encoding="utf-8") as f:
-                f.write(lyrics)
+        result = text[:3500]
 
-            bot.send_document(message.chat.id,open("lyrics.txt","rb"))
-
-        else:
-
-            bot.reply_to(message,lyrics)
+        bot.send_message(message.chat.id,result)
 
     except:
-
-        bot.reply_to(message,"❌ ارسل الأمر بهذا الشكل:\n/yt link")
-
+        bot.reply_to(message,"حصل خطأ")
 
 bot.infinity_polling()
