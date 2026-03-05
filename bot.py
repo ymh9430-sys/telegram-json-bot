@@ -5,85 +5,82 @@ import re
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-user_mode = {}
-
 def format_time(seconds):
     seconds = float(seconds)
     minutes = int(seconds // 60)
     remaining = seconds % 60
     return f"{minutes:02d}:{remaining:06.3f}"
 
-def to_seconds(time_str):
-    if ":" in time_str:
-        m, s = time_str.split(":")
-        return float(m) * 60 + float(s)
-    return float(time_str)
+def to_seconds(t):
+    if ":" in t:
+        m, s = t.split(":")
+        return float(m)*60 + float(s)
+    return float(t)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message,
-        "اختار طريقة الإرسال:\n"
-        "text = إرسال كنص\n"
-        "file = إرسال كملف"
-    )
-
-@bot.message_handler(func=lambda m: m.text in ["text","file"])
-def set_mode(message):
-    user_mode[message.chat.id] = message.text
-    bot.reply_to(message,"تمام 👌 ابعت النص")
+    bot.reply_to(message,"ابعت النص وأنا هحوله فوراً")
 
 @bot.message_handler(content_types=['text'])
-def process_text(message):
+def convert(message):
 
-    if message.text in ["text","file"]:
-        return
-
-    mode = user_mode.get(message.chat.id,"text")
     text = message.text
 
-    blocks = re.findall(r'\[(.*?)\](.*)', text)
+    lines = text.split("\n")
+    result = []
 
-    used_times = set()
-    result_lines = []
+    i = 0
+    while i < len(lines):
 
-    for line_time, words in blocks:
+        line = lines[i]
 
-        base = to_seconds(line_time)
+        if line.startswith("["):
 
-        while round(base,3) in used_times:
-            base += 0.001
+            time_match = re.search(r'\[(.*?)\]', line)
 
-        used_times.add(round(base,3))
-        line_time = format_time(base)
+            if time_match and i+1 < len(lines):
 
-        word_parts = re.findall(r'<(.*?)>(.*?)<(.*?)>', words)
+                line_time = format_time(to_seconds(time_match.group(1)))
 
-        line = f"[{line_time}]"
+                words_line = lines[i+1]
 
-        for start, word, end in word_parts:
+                if words_line.startswith("<"):
 
-            start = format_time(to_seconds(start))
-            end = format_time(to_seconds(end))
+                    words_line = words_line.strip("<>")
 
-            line += f"<{start}>{word}<{end}> "
+                    words = words_line.split("|")
 
-        result_lines.append(line.strip())
+                    new_line = f"[{line_time}]"
 
-    result = "\n".join(result_lines)
+                    for w in words:
 
-    if not result:
-        bot.reply_to(message,"❌ حصل خطأ في تحليل النص")
-        return
+                        parts = w.split(":")
 
-    if mode == "file" or len(result) > 4000:
+                        if len(parts) == 3:
+
+                            word = parts[0]
+                            start = format_time(parts[1])
+                            end = format_time(parts[2])
+
+                            new_line += f"<{start}>{word}<{end}> "
+
+                    result.append(new_line.strip())
+
+                i += 1
+
+        i += 1
+
+    final = "\n".join(result)
+
+    if len(final) > 4000:
 
         with open("lyrics.txt","w",encoding="utf-8") as f:
-            f.write(result)
+            f.write(final)
 
         bot.send_document(message.chat.id,open("lyrics.txt","rb"))
         os.remove("lyrics.txt")
 
     else:
-        bot.reply_to(message,result)
+        bot.reply_to(message,final)
 
 bot.infinity_polling()
