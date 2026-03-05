@@ -2,11 +2,16 @@ import telebot
 import os
 import re
 import requests
+from ytmusicapi import YTMusic
 
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-user_mode = {}
+yt = YTMusic()
+
+# =========================
+# time helpers
+# =========================
 
 def format_time(seconds):
     seconds = float(seconds)
@@ -16,22 +21,37 @@ def format_time(seconds):
 
 def to_seconds(time_str):
     if ":" in time_str:
-        parts = time_str.split(":")
-        return float(parts[0]) * 60 + float(parts[1])
+        m, s = time_str.split(":")
+        return float(m)*60 + float(s)
     return float(time_str)
 
-def fix_duplicate_times(seconds, used):
-    while round(seconds,3) in used:
-        seconds += 0.001
-    used.add(round(seconds,3))
-    return seconds
+def fix_duplicate(t, used):
+    while round(t,3) in used:
+        t += 0.001
+    used.add(round(t,3))
+    return t
 
 # =========================
-# جلب كلمات الأغنية
+# search song
 # =========================
 
-def get_lyrics(artist, song):
-    url = f"https://lrclib.net/api/get?artist_name={artist}&track_name={song}"
+def search_song(query):
+
+    results = yt.search(query, filter="songs")
+
+    if not results:
+        return None
+
+    return results[0]["videoId"]
+
+# =========================
+# get synced lyrics
+# =========================
+
+def get_synced_lyrics(artist, title):
+
+    url = f"https://lrclib.net/api/get?artist_name={artist}&track_name={title}"
+
     r = requests.get(url)
 
     if r.status_code != 200:
@@ -45,13 +65,13 @@ def get_lyrics(artist, song):
     return data["syncedLyrics"]
 
 # =========================
-# تحويل LRC لصيغة الكلمة
+# convert LRC
 # =========================
 
 def convert_lrc(text):
 
     lines = text.split("\n")
-    used_times = set()
+    used = set()
     output = []
 
     for line in lines:
@@ -61,23 +81,25 @@ def convert_lrc(text):
         if not m:
             continue
 
-        time = m.group(1)
+        t = m.group(1)
         words = m.group(2).strip().split()
 
-        base = fix_duplicate_times(to_seconds(time), used_times)
-        line_time = format_time(base)
+        base = fix_duplicate(to_seconds(t), used)
 
-        new_line = f"[{line_time}]"
+        line = f"[{format_time(base)}]"
 
         current = base
 
         for w in words:
+
             start = format_time(current)
             end = format_time(current + 0.3)
-            new_line += f"<{start}>{w}<{end}> "
+
+            line += f"<{start}>{w}<{end}> "
+
             current += 0.3
 
-        output.append(new_line.strip())
+        output.append(line.strip())
 
     return "\n".join(output)
 
@@ -86,91 +108,90 @@ def convert_lrc(text):
 # =========================
 
 @bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message,
-    """اهلا 👋
+def start(m):
 
-ارسل:
+    bot.reply_to(m,
+"""
+الاوامر:
 
-artist - song
-
-مثال:
-Billie Eilish - Bad Guy
-
-او ارسل النص القديم للتحويل
+/song artist - title
+/yt link
+/json text
 """)
 
 # =========================
-# معالجة الرسائل
+# song command
 # =========================
 
-@bot.message_handler(content_types=['text'])
-def handle(message):
+@bot.message_handler(commands=['song'])
+def song_cmd(m):
 
-    text = message.text.strip()
+    try:
+        query = m.text.replace("/song","").strip()
 
-    # لو صيغة اغنية
-    if " - " in text:
+        artist,title = query.split("-",1)
 
-        artist, song = text.split(" - ",1)
+        bot.reply_to(m,"🔎 جاري البحث...")
 
-        bot.reply_to(message,"🔎 جاري البحث عن الكلمات...")
-
-        lyrics = get_lyrics(artist, song)
+        lyrics = get_synced_lyrics(artist.strip(),title.strip())
 
         if not lyrics:
-            bot.reply_to(message,"❌ لم يتم العثور على كلمات")
+            bot.reply_to(m,"❌ لم يتم العثور على كلمات")
             return
 
         result = convert_lrc(lyrics)
 
         if len(result) > 4000:
-            with open("lyrics.txt","w",encoding="utf-8") as f:
+
+            with open("lyrics.txt","w",encoding="utf8") as f:
                 f.write(result)
 
-            bot.send_document(message.chat.id,open("lyrics.txt","rb"))
+            bot.send_document(m.chat.id,open("lyrics.txt","rb"))
+
             os.remove("lyrics.txt")
 
         else:
-            bot.reply_to(message,result)
+            bot.reply_to(m,result)
 
-        return
+    except:
+        bot.reply_to(m,"الصيغة:\n/song artist - title")
 
-    # =========================
-    # النظام القديم
-    # =========================
+# =========================
+# json convert
+# =========================
+
+@bot.message_handler(commands=['json'])
+def json_convert(m):
+
+    text = m.text.replace("/json","").strip()
 
     blocks = re.findall(r'\[(.*?)\].*?\n<(.*?)>', text, re.DOTALL)
 
-    output_lines = []
-    used_times = set()
+    used = set()
+    output = []
 
     for line_time, words_block in blocks:
 
-        base_seconds = fix_duplicate_times(to_seconds(line_time), used_times)
+        base = fix_duplicate(to_seconds(line_time), used)
 
-        line_time_formatted = format_time(base_seconds)
+        new_line = f"[{format_time(base)}]"
 
         words = words_block.split("|")
 
-        new_line = f"[{line_time_formatted}]"
-
         for w in words:
+
             parts = w.split(":")
 
             if len(parts) == 3:
+
                 word = parts[0]
                 start = format_time(parts[1])
                 end = format_time(parts[2])
+
                 new_line += f"<{start}>{word}<{end}> "
 
-        output_lines.append(new_line.strip())
+        output.append(new_line.strip())
 
-    result = "\n".join(output_lines)
-
-    if result:
-        bot.reply_to(message,result)
-    else:
-        bot.reply_to(message,"❌ لم يتم فهم النص")
+    bot.reply_to(m,"\n".join(output))
 
 bot.infinity_polling()
