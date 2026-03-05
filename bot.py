@@ -1,59 +1,30 @@
 import telebot
-import requests
-import re
-from ytmusicapi import YTMusic
 import os
+import asyncio
+from playwright.async_api import async_playwright
 
-TOKEN = os.getenv("BOT_TOKEN")
-APPLE_TOKEN = os.getenv("APPLE_TOKEN")
-
+TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-yt = YTMusic()
+async def get_lyrics_from_ytmusic(url):
 
-def extract_video_id(url):
-    match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
-    if match:
-        return match.group(1)
-    return None
+    async with async_playwright() as p:
 
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
 
-def search_song(title, artist):
+        await page.goto(url)
 
-    url = "https://api.music.apple.com/v1/catalog/us/search"
+        await page.wait_for_timeout(8000)
 
-    params = {
-        "term": f"{artist} {title}",
-        "types": "songs",
-        "limit": 1
-    }
+        try:
+            lyrics = await page.inner_text("ytmusic-description-shelf-renderer")
+        except:
+            lyrics = "❌ لم أستطع استخراج الكلمات"
 
-    headers = {
-        "Authorization": f"Bearer {APPLE_TOKEN}"
-    }
+        await browser.close()
 
-    r = requests.get(url, headers=headers, params=params)
-
-    data = r.json()
-
-    try:
-        song = data["results"]["songs"]["data"][0]
-        return song["id"]
-    except:
-        return None
-
-
-def get_lyrics(song_id):
-
-    url = f"https://api.music.apple.com/v1/catalog/us/songs/{song_id}"
-
-    headers = {
-        "Authorization": f"Bearer {APPLE_TOKEN}"
-    }
-
-    r = requests.get(url, headers=headers)
-
-    return r.text
+        return lyrics
 
 
 @bot.message_handler(commands=['start'])
@@ -61,42 +32,36 @@ def start(message):
 
     bot.reply_to(
         message,
-        "ابعت:\n\n/yt رابط يوتيوب ميوزك"
+        "ابعت لينك الأغنية من YouTube Music بهذا الشكل:\n\n"
+        "/yt link"
     )
 
 
 @bot.message_handler(commands=['yt'])
-def yt(message):
+def get_lyrics(message):
 
     try:
 
         url = message.text.split(" ",1)[1]
 
-        video_id = extract_video_id(url)
+        bot.reply_to(message,"⏳ جاري استخراج الكلمات...")
 
-        song = yt.get_song(video_id)
+        lyrics = asyncio.run(get_lyrics_from_ytmusic(url))
 
-        title = song["videoDetails"]["title"]
-        artist = song["videoDetails"]["author"]
+        if len(lyrics) > 3500:
 
-        bot.reply_to(message,f"🎵 {title} - {artist}")
+            with open("lyrics.txt","w",encoding="utf-8") as f:
+                f.write(lyrics)
 
-        song_id = search_song(title,artist)
+            bot.send_document(message.chat.id,open("lyrics.txt","rb"))
 
-        if not song_id:
+        else:
 
-            bot.reply_to(message,"❌ لم يتم العثور على الأغنية")
-            return
+            bot.reply_to(message,lyrics)
 
-        lyrics = get_lyrics(song_id)
+    except:
 
-        bot.send_message(message.chat.id,lyrics[:4000])
+        bot.reply_to(message,"❌ ارسل الأمر بهذا الشكل:\n/yt link")
 
-    except Exception as e:
-
-        bot.reply_to(message,f"خطأ:\n{e}")
-
-
-print("Bot Running...")
 
 bot.infinity_polling()
