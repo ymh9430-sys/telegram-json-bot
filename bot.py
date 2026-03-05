@@ -5,11 +5,21 @@ import re
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
+used_times = set()
+
 def format_time(seconds):
     seconds = float(seconds)
     minutes = int(seconds // 60)
     remaining = seconds % 60
     return f"{minutes:02d}:{remaining:06.3f}"
+
+def adjust_duplicate_time(seconds):
+
+    while round(seconds,3) in used_times:
+        seconds += 0.001
+
+    used_times.add(round(seconds,3))
+    return seconds
 
 def to_seconds(t):
     if ":" in t:
@@ -19,13 +29,15 @@ def to_seconds(t):
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message,"ابعت النص وأنا هحوله فوراً")
+    bot.reply_to(message,"ابعت النص وأنا هحوله")
 
 @bot.message_handler(content_types=['text'])
 def convert(message):
 
-    text = message.text
+    global used_times
+    used_times = set()
 
+    text = message.text
     lines = text.split("\n")
     result = []
 
@@ -40,14 +52,17 @@ def convert(message):
 
             if time_match and i+1 < len(lines):
 
-                line_time = format_time(to_seconds(time_match.group(1)))
+                base_seconds = to_seconds(time_match.group(1))
+
+                base_seconds = adjust_duplicate_time(base_seconds)
+
+                line_time = format_time(base_seconds)
 
                 words_line = lines[i+1]
 
                 if words_line.startswith("<"):
 
                     words_line = words_line.strip("<>")
-
                     words = words_line.split("|")
 
                     new_line = f"[{line_time}]"
@@ -59,8 +74,8 @@ def convert(message):
                         if len(parts) == 3:
 
                             word = parts[0]
-                            start = format_time(parts[1])
-                            end = format_time(parts[2])
+                            start = format_time(to_seconds(parts[1]))
+                            end = format_time(to_seconds(parts[2]))
 
                             new_line += f"<{start}>{word}<{end}> "
 
