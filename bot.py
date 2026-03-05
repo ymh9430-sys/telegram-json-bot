@@ -1,93 +1,89 @@
 import telebot
 import os
 import re
-import asyncio
-from playwright.async_api import async_playwright
 
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
+user_mode = {}
 
-async def get_lyrics(url):
-    async with async_playwright() as p:
+def format_time(seconds):
+    seconds = float(seconds)
+    minutes = int(seconds // 60)
+    remaining = seconds % 60
+    return f"{minutes:02d}:{remaining:06.3f}"
 
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-
-        await page.goto(url)
-
-        # نستنى تحميل الصفحة
-        await page.wait_for_timeout(8000)
-
-        # نحاول نقرأ كلمات Better Lyrics
-        lyrics = await page.evaluate("""
-        () => {
-            let lines = document.querySelectorAll('[data-line-number]');
-            let result = [];
-
-            lines.forEach(line => {
-                let lineTime = line.getAttribute("data-time");
-                let words = line.querySelectorAll('[data-content]');
-                let text = "";
-
-                words.forEach(word=>{
-                    let start = word.getAttribute("data-time");
-                    let dur = word.getAttribute("data-duration");
-                    let content = word.getAttribute("data-content");
-
-                    let end = (parseFloat(start) + parseFloat(dur)).toFixed(3);
-
-                    function format(t){
-                        let m = Math.floor(t/60);
-                        let s = (t%60).toFixed(3);
-                        if(s < 10) s = "0"+s;
-                        if(m < 10) m = "0"+m;
-                        return m+":"+s;
-                    }
-
-                    text += "<"+format(start)+">"+content+"<"+format(end)+"> ";
-                });
-
-                function format(t){
-                    t = parseFloat(t);
-                    let m = Math.floor(t/60);
-                    let s = (t%60).toFixed(3);
-                    if(s < 10) s = "0"+s;
-                    if(m < 10) m = "0"+m;
-                    return m+":"+s;
-                }
-
-                result.push("["+format(lineTime)+"]"+text.trim());
-            });
-
-            return result.join("\\n");
-        }
-        """)
-
-        await browser.close()
-        return lyrics
-
+def to_seconds(time_str):
+    if ":" in time_str:
+        m, s = time_str.split(":")
+        return float(m) * 60 + float(s)
+    return float(time_str)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "ابعت لينك YouTube Music 🎵")
+    bot.reply_to(message,
+        "اختار طريقة الإرسال:\n"
+        "text = إرسال كنص\n"
+        "file = إرسال كملف"
+    )
 
+@bot.message_handler(func=lambda m: m.text in ["text","file"])
+def set_mode(message):
+    user_mode[message.chat.id] = message.text
+    bot.reply_to(message,"تمام 👌 ابعت النص")
 
-@bot.message_handler(func=lambda m: "music.youtube.com" in m.text)
-def handle_link(message):
+@bot.message_handler(content_types=['text'])
+def process_text(message):
 
-    bot.reply_to(message, "⏳ جاري استخراج الكلمات...")
+    if message.text in ["text","file"]:
+        return
 
-    try:
-        lyrics = asyncio.run(get_lyrics(message.text))
+    mode = user_mode.get(message.chat.id,"text")
+    text = message.text
 
-        if lyrics:
-            bot.send_message(message.chat.id, lyrics)
-        else:
-            bot.send_message(message.chat.id, "❌ مقدرتش أجيب الكلمات")
+    blocks = re.findall(r'\[(.*?)\](.*)', text)
 
-    except Exception as e:
-        bot.send_message(message.chat.id, str(e))
+    used_times = set()
+    result_lines = []
 
+    for line_time, words in blocks:
+
+        base = to_seconds(line_time)
+
+        while round(base,3) in used_times:
+            base += 0.001
+
+        used_times.add(round(base,3))
+        line_time = format_time(base)
+
+        word_parts = re.findall(r'<(.*?)>(.*?)<(.*?)>', words)
+
+        line = f"[{line_time}]"
+
+        for start, word, end in word_parts:
+
+            start = format_time(to_seconds(start))
+            end = format_time(to_seconds(end))
+
+            line += f"<{start}>{word}<{end}> "
+
+        result_lines.append(line.strip())
+
+    result = "\n".join(result_lines)
+
+    if not result:
+        bot.reply_to(message,"❌ حصل خطأ في تحليل النص")
+        return
+
+    if mode == "file" or len(result) > 4000:
+
+        with open("lyrics.txt","w",encoding="utf-8") as f:
+            f.write(result)
+
+        bot.send_document(message.chat.id,open("lyrics.txt","rb"))
+        os.remove("lyrics.txt")
+
+    else:
+        bot.reply_to(message,result)
 
 bot.infinity_polling()
