@@ -78,12 +78,8 @@ def handle(message):
 
         lyrics = get_lyrics(title, artist, duration)
 
-        if lyrics:
-    with open("lyrics.lrc","w",encoding="utf-8") as f:
-        f.write(lyrics)
-
-    with open("lyrics.lrc","rb") as f:
-        bot.send_document(message.chat.id,f)
+        for i in range(0, len(lyrics), 4000):
+    bot.send_message(message.chat.id, lyrics[i:i+4000])
         else:
             bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
 
