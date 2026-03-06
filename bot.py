@@ -2,7 +2,7 @@ import telebot
 import requests
 from ytmusicapi import YTMusic
 
-BOT_TOKEN = "PUT_YOUR_TOKEN_HERE"
+BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
@@ -29,11 +29,13 @@ def handle(message):
     try:
         link = message.text.split(" ",1)[1]
 
-        search = yt.get_song(link.split("v=")[1])
+        video_id = link.split("v=")[1]
 
-        title = search["videoDetails"]["title"]
-        artist = search["videoDetails"]["author"]
-        duration = int(search["videoDetails"]["lengthSeconds"])
+        info = yt.get_song(video_id)
+
+        title = info["videoDetails"]["title"]
+        artist = info["videoDetails"]["author"]
+        duration = int(info["videoDetails"]["lengthSeconds"])
 
         bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات...")
 
@@ -45,6 +47,6 @@ def handle(message):
             bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
 
     except Exception as e:
-        bot.send_message(message.chat.id,f"Error\n{e}")
+        bot.send_message(message.chat.id,str(e))
 
 bot.infinity_polling()
