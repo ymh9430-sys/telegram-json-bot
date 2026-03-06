@@ -15,6 +15,7 @@ def extract_video_id(url):
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
+        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
         r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
     ]
 
@@ -50,6 +51,7 @@ def convert_ttml(ttml):
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
+    used_times = []
 
     for p in root.findall(".//tt:p", ns):
 
@@ -58,13 +60,23 @@ def convert_ttml(ttml):
         if not line_begin:
             continue
 
-        line_time = format_time(parse_time(line_begin))
+        line_time_sec = parse_time(line_begin)
+
+        while line_time_sec in used_times:
+            line_time_sec += 0.001
+
+        used_times.append(line_time_sec)
+
+        line_time = format_time(line_time_sec)
 
         line = f"[{line_time}]"
 
-        words = []
+        spans = p.findall(".//tt:span", ns)
 
-        for span in p.findall("tt:span", ns):
+        words = []
+        last_end = None
+
+        for span in spans:
 
             begin = span.attrib.get("begin")
             end = span.attrib.get("end")
@@ -73,10 +85,20 @@ def convert_ttml(ttml):
             if not begin or not end or not word:
                 continue
 
-            b = format_time(parse_time(begin))
-            e = format_time(parse_time(end))
+            b = parse_time(begin)
+            e = parse_time(end)
 
-            words.append(f"<{b}>{word}<{e}>")
+            b_fmt = format_time(b)
+            e_fmt = format_time(e)
+
+            segment = f"<{b_fmt}>{word}<{e_fmt}>"
+
+            if last_end is not None and abs(b - last_end) < 0.12:
+                words[-1] += segment
+            else:
+                words.append(segment)
+
+            last_end = e
 
         line += " ".join(words)
 
