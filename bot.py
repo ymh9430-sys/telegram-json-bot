@@ -17,7 +17,57 @@ def extract_video_id(url):
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
         r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
         r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"shorts/([a-zA-Z0-9_-]{11})"
+        r"shorts/([a-zA-Z0-9_-]{11}def convert_ttml(ttml):
+
+    root = ET.fromstring(ttml)
+
+    result = []
+    used_times = set()
+
+    for p in root.iter():
+
+        if not p.tag.endswith("p"):
+            continue
+
+        begin = p.attrib.get("begin")
+        if not begin:
+            continue
+
+        sec = parse_time(begin)
+
+        while round(sec,3) in used_times:
+            sec += 0.001
+
+        used_times.add(round(sec,3))
+
+        line_time = format_time(sec)
+
+        line = f"[{line_time}]"
+
+        words = []
+
+        for span in p.iter():
+
+            if not span.tag.endswith("span"):
+                continue
+
+            b = span.attrib.get("begin")
+            e = span.attrib.get("end")
+            word = span.text
+
+            if not b or not e or not word:
+                continue
+
+            b = format_time(parse_time(b))
+            e = format_time(parse_time(e))
+
+            words.append(f"<{b}>{word}<{e}>")
+
+        if words:
+            line += " " + " ".join(words)
+            result.append(line)
+
+    return "\n".join(result))"
     ]
 
     for p in patterns:
@@ -45,65 +95,7 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
-def convert_ttml(ttml):
 
-    root = ET.fromstring(ttml)
-
-    ns = {
-        'tt': 'http://www.w3.org/ns/ttml'
-    }
-
-    result = []
-    used_times = set()
-
-    # قراءة كل الفقرات
-    for p in root.findall(".//tt:p", ns):
-
-        begin = p.attrib.get("begin")
-
-        if not begin:
-            continue
-
-        sec = parse_time(begin)
-
-        # منع تكرار نفس الوقت
-        while round(sec,3) in used_times:
-            sec += 0.001
-
-        used_times.add(round(sec,3))
-
-        line_time = format_time(sec)
-
-        line = f"[{line_time}]"
-
-        spans = p.findall(".//tt:span", ns)
-
-        words = []
-
-        for span in spans:
-
-            word = span.text
-
-            if not word:
-                continue
-
-            b = span.attrib.get("begin")
-            e = span.attrib.get("end")
-
-            if not b or not e:
-                continue
-
-            b = format_time(parse_time(b))
-            e = format_time(parse_time(e))
-
-            words.append(f"<{b}>{word}<{e}>")
-
-        if words:
-            line += " " + " ".join(words)
-
-        result.append(line)
-
-    return "\n".join(result)
 
 
 def get_lyrics(title, artist, duration=0):
