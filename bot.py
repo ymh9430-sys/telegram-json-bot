@@ -9,15 +9,47 @@ BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
-
+# استخراج video id من أي رابط
 def extract_video_id(url):
 
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"shorts/([a-zA-Z0-9_-]{11}def convert_ttml(ttml):
+        r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})",
+        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
+    ]
+
+    for p in patterns:
+        m = re.search(p, url)
+        if m:
+            return m.group(1)
+
+    return None
+
+
+# تحويل الوقت لثواني
+def parse_time(t):
+
+    try:
+        if ":" in t:
+            m, s = t.split(":")
+            return int(m) * 60 + float(s)
+        return float(t)
+    except:
+        return 0
+
+
+# تنسيق الوقت
+def format_time(sec):
+
+    m = int(sec // 60)
+    s = sec % 60
+
+    return f"{m:02d}:{s:06.3f}"
+
+
+# تحويل TTML إلى الصيغة المطلوبة
+def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
 
@@ -30,6 +62,7 @@ def extract_video_id(url):
             continue
 
         begin = p.attrib.get("begin")
+
         if not begin:
             continue
 
@@ -67,38 +100,11 @@ def extract_video_id(url):
             line += " " + " ".join(words)
             result.append(line)
 
-    return "\n".join(result))"
-    ]
-
-    for p in patterns:
-        m = re.search(p, url)
-        if m:
-            return m.group(1)
-
-    return None
+    return "\n".join(result)
 
 
-def parse_time(t):
-
-    if ":" in t:
-        m, s = t.split(":")
-        return int(m) * 60 + float(s)
-
-    return float(t)
-
-
-def format_time(sec):
-
-    m = int(sec // 60)
-    s = sec % 60
-
-    return f"{m:02d}:{s:06.3f}"
-
-
-
-
-
-def get_lyrics(title, artist, duration=0):
+# جلب الكلمات
+def get_lyrics(title, artist, duration):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
@@ -110,17 +116,16 @@ def get_lyrics(title, artist, duration=0):
 
     try:
 
-        r = requests.get(url, params=params, timeout=15)
+        r = requests.get(url, params=params, timeout=10)
 
         if r.status_code == 200:
 
             data = r.json()
 
-            if data and data.get("ttml"):
-                return data["ttml"]
+            return data.get("ttml")
 
     except:
-        pass
+        return None
 
     return None
 
@@ -132,71 +137,78 @@ def handle(message):
 
         link = message.text.split(" ",1)[1]
 
-        video_id = extract_video_id(link)
+    except:
+        bot.reply_to(message,"اكتب الأمر هكذا:\n/yt LINK")
+        return
 
-        if not video_id:
-            bot.reply_to(message,"❌ لم أستطع استخراج video id")
-            return
+    video_id = extract_video_id(link)
+
+    if not video_id:
+        bot.reply_to(message,"❌ رابط غير صالح")
+        return
+
+
+    # جلب معلومات الفيديو
+    try:
+
+        info = yt.get_song(video_id)
+
+        video = info.get("videoDetails",{})
+
+        title = video.get("title")
+        artist = video.get("author")
+        duration = int(video.get("lengthSeconds",0))
+
+    except:
 
         title = None
-        artist = None
-        duration = 0
+
+
+    # fallback
+    if not title:
 
         try:
 
-            info = yt.get_song(video_id)
+            r = requests.get(f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}")
 
-            video = info.get("videoDetails",{})
+            data = r.json()
 
-            title = video.get("title")
-            artist = video.get("author")
-            duration = int(video.get("lengthSeconds",0))
+            title = data.get("title","Unknown")
+            artist = data.get("author_name","Unknown")
+            duration = 0
 
         except:
-            pass
 
-        if not title:
-
-            try:
-
-                r = requests.get(
-                    f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}"
-                )
-
-                data = r.json()
-
-                title = data.get("title")
-                artist = data.get("author_name")
-
-            except:
-                pass
-
-        if not title:
-            bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
+            bot.reply_to(message,"❌ لم استطع جلب معلومات الفيديو")
             return
 
-        bot.reply_to(
-            message,
-            f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات..."
-        )
 
-        lyrics_ttml = get_lyrics(title,artist,duration)
+    bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات...")
 
-        if not lyrics_ttml:
-            bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
-            return
+
+    lyrics_ttml = get_lyrics(title,artist,duration)
+
+    if not lyrics_ttml:
+        bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
+        return
+
+
+    try:
 
         lyrics = convert_ttml(lyrics_ttml)
 
-        with open("lyrics.txt","w",encoding="utf-8") as f:
-            f.write(lyrics)
+    except:
 
-        with open("lyrics.txt","rb") as f:
-            bot.send_document(message.chat.id,f)
+        bot.send_message(message.chat.id,"❌ خطأ في معالجة الكلمات")
+        return
 
-    except Exception as e:
 
-        bot.send_message(message.chat.id,f"❌ خطأ:\n{str(e)}")
+    with open("lyrics.txt","w",encoding="utf-8") as f:
+        f.write(lyrics)
+
+
+    with open("lyrics.txt","rb") as f:
+        bot.send_document(message.chat.id,f)
 
 
 bot.infinity_polling()
