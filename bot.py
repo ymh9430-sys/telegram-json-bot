@@ -1,44 +1,21 @@
 import telebot
 import requests
-import urllib.parse as urlparse
-from yt_dlp import YoutubeDL
+from ytmusicapi import YTMusic
 
 BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 bot = telebot.TeleBot(BOT_TOKEN)
+yt = YTMusic()
 
-
-def extract_video_id(url):
-    parsed = urlparse.urlparse(url)
-
-    if "v=" in url:
-        return url.split("v=")[1].split("&")[0]
-
-    if "youtu.be" in parsed.netloc:
-        return parsed.path.replace("/","")
-
+def get_video_id(link):
+    if "v=" in link:
+        return link.split("v=")[1].split("&")[0]
+    if "youtu.be/" in link:
+        return link.split("youtu.be/")[1].split("?")[0]
     return None
 
 
-def get_video_info(url):
-
-    ydl_opts = {
-        'quiet': True,
-        'skip_download': True
-    }
-
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    title = info.get("title")
-    artist = info.get("uploader")
-    duration = int(info.get("duration",0))
-
-    return title, artist, duration
-
-
-def get_lyrics(title, artist, duration):
-
+def get_lyrics(title, artist, duration=0):
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
     params = {
@@ -47,11 +24,14 @@ def get_lyrics(title, artist, duration):
         "d": duration
     }
 
-    r = requests.get(url, params=params)
+    try:
+        r = requests.get(url, params=params, timeout=15)
 
-    if r.status_code == 200:
-        data = r.json()
-        return data.get("ttml")
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("ttml")
+    except:
+        pass
 
     return None
 
@@ -60,33 +40,54 @@ def get_lyrics(title, artist, duration):
 def handle(message):
 
     try:
-
         link = message.text.split(" ",1)[1]
+    except:
+        bot.reply_to(message,"❌ ابعت الامر كده:\n/yt link")
+        return
 
-        video_id = extract_video_id(link)
+    video_id = get_video_id(link)
 
-        if not video_id:
-            bot.reply_to(message,"❌ رابط غير صحيح")
-            return
+    if not video_id:
+        bot.reply_to(message,"❌ الرابط غير صحيح")
+        return
 
-        title, artist, duration = get_video_info(link)
+    bot.reply_to(message,"🔎 جاري جلب معلومات الاغنية...")
 
-        bot.reply_to(
-            message,
-            f"🎵 {title}\n👤 {artist}\n⏱ {duration}s\n\n🔎 جاري البحث عن الكلمات..."
-        )
+    try:
+        info = yt.get_song(video_id)
+        details = info.get("videoDetails",{})
 
-        lyrics = get_lyrics(title, artist, duration)
+        title = details.get("title")
+        artist = details.get("author")
+        duration = int(details.get("lengthSeconds",0))
 
-        for i in range(0, len(lyrics), 4000):
-    bot.send_message(message.chat.id, lyrics[i:i+4000])
-        else:
-            bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
+    except:
+        bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
+        return
+
+    if not title:
+        bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
+        return
+
+    bot.send_message(message.chat.id,f"🎵 {title}\n👤 {artist}\n\n🔎 جاري البحث عن الكلمات...")
+
+    lyrics = get_lyrics(title,artist,duration)
+
+    if not lyrics:
+        bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
+        return
+
+    try:
+        filename = "lyrics.txt"
+
+        with open(filename,"w",encoding="utf-8") as f:
+            f.write(lyrics)
+
+        with open(filename,"rb") as f:
+            bot.send_document(message.chat.id,f)
 
     except Exception as e:
-        bot.send_message(message.chat.id,str(e))
+        bot.send_message(message.chat.id,f"❌ خطأ:\n{e}")
 
-
-print("Bot running...")
 
 bot.infinity_polling()
