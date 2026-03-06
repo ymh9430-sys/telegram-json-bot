@@ -48,10 +48,11 @@ def format_time(sec):
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
+
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
-    used_times = {}
+    used_times = set()
 
     for p in root.findall(".//tt:p", ns):
 
@@ -62,61 +63,64 @@ def convert_ttml(ttml):
 
         sec = parse_time(begin)
 
-        key = round(sec,3)
+        # حل مشكلة السطور بنفس الوقت
+        while round(sec,3) in used_times:
+            sec += 0.001
 
-        if key in used_times:
-            sec += 0.001 * used_times[key]
-            used_times[key] += 1
-        else:
-            used_times[key] = 1
+        used_times.add(round(sec,3))
 
         line_time = format_time(sec)
 
-        spans = p.findall("tt:span", ns)
+        words = []
 
-        line = f"[{line_time}]"
+        spans = p.findall(".//tt:span", ns)
+
         prev_end = None
 
         for span in spans:
 
-            b = span.attrib.get("begin")
-            e = span.attrib.get("end")
-            word = span.text
+            text = span.text
 
-            if not b or not e or not word:
+            if not text:
                 continue
 
-            word = word.strip()
+            b = span.attrib.get("begin")
+            e = span.attrib.get("end")
+
+            if not b or not e:
+                continue
 
             b = format_time(parse_time(b))
             e = format_time(parse_time(e))
 
-            # الكلمات بين اقواس
-            if word.startswith("(") or word.startswith("["):
+            segment = f"<{b}>{text}<{e}>"
 
-                if line.strip() != f"[{line_time}]":
-                    result.append(line.strip())
-
-                result.append(f"[{b}]<{b}>{word}<{e}>")
-                line = f"[{line_time}]"
-                prev_end = None
-                continue
-
-            segment = f"<{b}>{word}<{e}>"
-
-            # دمج المقاطع المجزأة
-            if prev_end == b:
-                line += segment
+            # الكلمات المجزأة
+            if prev_end and prev_end == b:
+                words[-1] = words[-1] + segment
             else:
-                line += " " + segment
+                words.append(segment)
 
             prev_end = e
 
-        if line.strip() != f"[{line_time}]":
-            result.append(line.strip())
+        if not words:
+            continue
+
+        line = f"[{line_time}]"
+
+        for w in words:
+
+            text_only = re.sub(r"<.*?>", "", w)
+
+            # لو الكلمة بين اقواس
+            if text_only.startswith("(") and text_only.endswith(")"):
+                result.append(f"[{line_time}]{w}")
+            else:
+                line += " " + w
+
+        result.append(line.strip())
 
     return "\n".join(result)
-
 
 def get_lyrics(title, artist, duration=0):
 
