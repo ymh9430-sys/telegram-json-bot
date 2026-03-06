@@ -1,5 +1,5 @@
 import asyncio
-import requests
+import aiohttp
 from playwright.async_api import async_playwright
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
@@ -29,7 +29,7 @@ async def get_jwt():
 
         await page.goto("https://music.youtube.com")
 
-        await asyncio.sleep(10)
+        await asyncio.sleep(20)
 
         await browser.close()
 
@@ -53,28 +53,49 @@ async def get_lyrics(video_id):
         "videoId": video_id
     }
 
-    r = requests.get(url, headers=headers, params=params)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, params=params) as r:
+            return await r.text()
 
-    return r.text
+
+def extract_video_id(url):
+
+    if "v=" in url:
+        return url.split("v=")[1].split("&")[0]
+
+    if "youtu.be/" in url:
+        return url.split("youtu.be/")[1].split("?")[0]
+
+    return None
 
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text
 
-    if "youtube.com" not in text:
-        await update.message.reply_text("ابعت لينك YouTube Music")
+    video_id = extract_video_id(text)
+
+    if not video_id:
+        await update.message.reply_text("ابعت لينك YouTube أو YouTube Music صحيح")
         return
 
-    video_id = text.split("v=")[1]
+    try:
+        lyrics = await get_lyrics(video_id)
 
-    lyrics = await get_lyrics(video_id)
+        if not lyrics:
+            await update.message.reply_text("ملقتش lyrics للأغنية")
+            return
 
-    await update.message.reply_text(lyrics[:4000])
+        await update.message.reply_text(lyrics[:4000])
+
+    except Exception as e:
+        await update.message.reply_text("حصل خطأ أثناء جلب الكلمات")
 
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(MessageHandler(filters.TEXT, handle))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+
+print("Bot Started")
 
 app.run_polling()
