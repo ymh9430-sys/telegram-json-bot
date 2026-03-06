@@ -59,14 +59,15 @@ def convert_ttml(ttml):
         if not line_begin:
             continue
 
-        time_sec = parse_time(line_begin)
+        line_time_sec = parse_time(line_begin)
 
-        while round(time_sec,3) in used_times:
-            time_sec += 0.001
+        # حل مشكلة السطرين بنفس التوقيت
+        while round(line_time_sec, 3) in used_times:
+            line_time_sec += 0.001
 
-        used_times.add(round(time_sec,3))
+        used_times.add(round(line_time_sec, 3))
 
-        line_time = format_time(time_sec)
+        line_time = format_time(line_time_sec)
 
         line = f"[{line_time}]"
 
@@ -86,22 +87,25 @@ def convert_ttml(ttml):
             b = format_time(parse_time(begin))
             e = format_time(parse_time(end))
 
-            piece = f"<{b}>{word}<{e}>"
+            part = f"<{b}>{word}<{e}>"
 
+            words.append(part)
+
+        # دمج الأجزاء بدون مسافة لو الكلمة متقسمة
+        merged_words = []
+
+        for i in range(len(words)):
             if i > 0:
+                prev_end = re.search(r"<(.+?)>$", words[i-1]).group(1)
+                curr_begin = re.search(r"^<(.+?)>", words[i]).group(1)
 
-                prev_end = parse_time(spans[i-1].attrib.get("end"))
-                curr_begin = parse_time(begin)
+                if prev_end == curr_begin:
+                    merged_words[-1] += words[i]
+                    continue
 
-                if curr_begin - prev_end < 0.15:
-                    words[-1] += piece
-                else:
-                    words.append(piece)
+            merged_words.append(words[i])
 
-            else:
-                words.append(piece)
-
-        line += " ".join(words)
+        line += " ".join(merged_words)
 
         result.append(line)
 
