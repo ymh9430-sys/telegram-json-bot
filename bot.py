@@ -15,7 +15,6 @@ def extract_video_id(url):
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
         r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
     ]
 
@@ -47,6 +46,7 @@ def format_time(sec):
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
+
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
@@ -55,59 +55,52 @@ def convert_ttml(ttml):
     for p in root.findall(".//tt:p", ns):
 
         line_begin = p.attrib.get("begin")
-        line_end = p.attrib.get("end")
 
-        if not line_begin or not line_end:
+        if not line_begin:
             continue
 
-        line_time = parse_time(line_begin)
+        line_sec = parse_time(line_begin)
 
-        while line_time in used_times:
-            line_time += 0.001
+        # منع تكرار نفس وقت البداية
+        while round(line_sec, 3) in used_times:
+            line_sec += 0.001
 
-        used_times.add(line_time)
+        used_times.add(round(line_sec, 3))
 
-        line_time_str = format_time(line_time)
+        line_time = format_time(line_sec)
+
+        line = f"[{line_time}]"
 
         spans = p.findall("tt:span", ns)
 
-        line = f"[{line_time_str}]"
+        words = []
 
-        prev_end = None
+        for i, span in enumerate(spans):
 
-        for span in spans:
-
-            word = span.text
             begin = span.attrib.get("begin")
             end = span.attrib.get("end")
+            word = span.text
 
-            if not word or not begin or not end:
+            if not begin or not end or not word:
                 continue
 
             b = format_time(parse_time(begin))
             e = format_time(parse_time(end))
 
-            segment = f"<{b}>{word}<{e}>"
+            words.append(f"<{b}>{word}<{e}>")
 
-            if prev_end and b == prev_end:
-                line += segment
+        # دمج الكلمات
+        text = ""
+        for w in words:
+
+            if text.endswith(">"):
+                text += " " + w
             else:
-                line += " " + segment
+                text += w
 
-            prev_end = e
+        line += text
 
-        result.append(line.strip())
-
-        # معالجة الكلمات بين الأقواس
-        full_text = "".join([s.text or "" for s in spans])
-
-        if "(" in full_text and ")" in full_text:
-
-            begin = format_time(parse_time(line_begin))
-            end = format_time(parse_time(line_end))
-
-            bracket_line = f"[{begin}]<{begin}>{full_text}<{end}>"
-            result.append(bracket_line)
+        result.append(line)
 
     return "\n".join(result)
 
@@ -131,6 +124,41 @@ def get_lyrics(title, artist, duration=0):
     return None
 
 
+def get_video_info(video_id):
+    try:
+
+        info = yt.get_song(video_id)
+
+        if info and "videoDetails" in info:
+            video = info["videoDetails"]
+            return (
+                video.get("title"),
+                video.get("author"),
+                int(video.get("lengthSeconds", 0))
+            )
+
+    except:
+        pass
+
+    # fallback search
+    try:
+
+        results = yt.search(video_id)
+
+        if results:
+            r = results[0]
+            return (
+                r.get("title"),
+                r.get("artists")[0]["name"] if r.get("artists") else "",
+                0
+            )
+
+    except:
+        pass
+
+    return None, None, None
+
+
 @bot.message_handler(commands=['yt'])
 def handle(message):
 
@@ -144,17 +172,7 @@ def handle(message):
             bot.reply_to(message, "❌ لم أستطع استخراج video id")
             return
 
-        info = yt.get_song(video_id)
-
-        if not info:
-            bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
-            return
-
-        video = info.get("videoDetails", {})
-
-        title = video.get("title")
-        artist = video.get("author")
-        duration = int(video.get("lengthSeconds", 0))
+        title, artist, duration = get_video_info(video_id)
 
         if not title:
             bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
