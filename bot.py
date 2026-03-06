@@ -3,6 +3,7 @@ import requests
 from ytmusicapi import YTMusic
 import re
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse, parse_qs
 
 BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
@@ -10,21 +11,34 @@ bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
 
+# استخراج video id من أي لينك
 def extract_video_id(url):
 
-    patterns = [
-        r"v=([a-zA-Z0-9_-]{11})",
-        r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
-    ]
+    try:
 
-    for p in patterns:
-        m = re.search(p, url)
-        if m:
-            return m.group(1)
+        parsed = urlparse(url)
+
+        if "youtu.be" in parsed.netloc:
+            return parsed.path.replace("/", "")
+
+        if "youtube.com" in parsed.netloc or "music.youtube.com" in parsed.netloc:
+            qs = parse_qs(parsed.query)
+            return qs.get("v", [None])[0]
+
+    except:
+        pass
 
     return None
+
+
+def clean_artist(name):
+
+    if not name:
+        return ""
+
+    name = name.replace("- Topic", "")
+    name = name.replace("VEVO", "")
+    return name.strip()
 
 
 def parse_time(t):
@@ -62,7 +76,7 @@ def convert_ttml(ttml):
 
         sec = parse_time(begin)
 
-        # حل مشكلة السطور بنفس التوقيت
+        # منع اختفاء السطور المتشابهة
         while round(sec,3) in used_times:
             sec += 0.001
 
@@ -74,7 +88,6 @@ def convert_ttml(ttml):
 
         words = []
 
-        # قراءة كل الكلمات حتى لو داخل عناصر إضافية
         for span in p.iter():
 
             if not span.tag.endswith("span"):
@@ -115,10 +128,26 @@ def get_lyrics(title, artist, duration=0):
 
         if r.status_code == 200:
             data = r.json()
+
+            if data.get("ttml"):
+                return data.get("ttml")
+
+    except:
+        pass
+
+    # محاولة ثانية بدون الفنان
+    try:
+
+        params = {"s": title}
+
+        r = requests.get(url, params=params, timeout=10)
+
+        if r.status_code == 200:
+            data = r.json()
             return data.get("ttml")
 
     except:
-        return None
+        pass
 
     return None
 
@@ -136,23 +165,33 @@ def handle(message):
             bot.reply_to(message,"❌ لم أستطع استخراج video id")
             return
 
+        title = None
+        artist = None
+        duration = 0
+
         try:
+
             info = yt.get_song(video_id)
             video = info.get("videoDetails",{})
+
+            title = video.get("title")
+            artist = clean_artist(video.get("author"))
+            duration = int(video.get("lengthSeconds",0))
+
         except:
-            video = {}
+            pass
 
-        title = video.get("title")
-        artist = video.get("author")
-        duration = int(video.get("lengthSeconds",0))
-
+        # fallback لو ytmusicapi فشل
         if not title:
 
-            r = requests.get(f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}")
+            r = requests.get(
+                f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}"
+            )
+
             data = r.json()
 
             title = data.get("title","Unknown")
-            artist = data.get("author_name","Unknown")
+            artist = clean_artist(data.get("author_name","Unknown"))
 
         bot.reply_to(
             message,
