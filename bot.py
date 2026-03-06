@@ -1,179 +1,127 @@
-import telebot
-import requests
-from ytmusicapi import YTMusic
 import re
+import requests
 import xml.etree.ElementTree as ET
-
-BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
-
-bot = telebot.TeleBot(BOT_TOKEN)
-yt = YTMusic()
-
-
-def extract_video_id(url):
-
-    patterns = [
-        r"v=([a-zA-Z0-9_-]{11})",
-        r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
-    ]
-
-    for p in patterns:
-        m = re.search(p, url)
-        if m:
-            return m.group(1)
-
-    return None
+from yt_dlp import YoutubeDL
 
 
 def parse_time(t):
-
-    if ":" in t:
-        m, s = t.split(":")
-        return int(m) * 60 + float(s)
-
+    parts = t.split(":")
+    if len(parts) == 2:
+        m, s = parts
+        return float(m) * 60 + float(s)
+    if len(parts) == 3:
+        h, m, s = parts
+        return float(h) * 3600 + float(m) * 60 + float(s)
     return float(t)
 
 
 def format_time(sec):
-
     m = int(sec // 60)
     s = sec % 60
+    return f"{m:02}:{s:06.3f}"
 
-    return f"{m:02d}:{s:06.3f}"
+
+def get_video_id(url):
+
+    ydl_opts = {"quiet": True}
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    return info["id"]
 
 
-def convert_ttml(ttml):
+def get_lyrics(video_id):
 
-    root = ET.fromstring(ttml)
+    url = f"https://music.youtube.com/youtubei/v1/get_lyrics"
 
-    ns = {'tt': 'http://www.w3.org/ns/ttml'}
+    payload = {
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240201.01.00"
+            }
+        },
+        "videoId": video_id
+    }
+
+    r = requests.post(url, json=payload)
+
+    data = r.json()
+
+    try:
+        return data["lyrics"]["lyrics"]["timedLyrics"]["lines"]
+    except:
+        return None
+
+
+def convert_lines(lines):
 
     result = []
 
-    last_line_time = None
+    last_time = None
 
-    for p in root.findall(".//tt:p", ns):
+    for line in lines:
 
-        begin = p.attrib.get("begin")
+        start = float(line["startTimeMs"]) / 1000
 
-        if not begin:
-            continue
+        if last_time and abs(start - last_time) < 0.001:
+            start += 0.001
 
-        sec = parse_time(begin)
+        last_time = start
 
-        if last_line_time and abs(sec - last_line_time) < 0.001:
-            sec += 0.001
+        line_time = format_time(start)
 
-        last_line_time = sec
+        words = line["words"].split()
 
-        line_time = format_time(sec)
+        text = f"[{line_time}] "
 
-        line = f"[{line_time}]"
+        t = start
 
-        spans = p.findall("tt:span", ns)
+        for w in words:
 
-        prev_end = None
+            dur = 0.25
 
-        for span in spans:
+            start_w = format_time(t)
+            end_w = format_time(t + dur)
 
-            b = span.attrib.get("begin")
-            e = span.attrib.get("end")
-            word = span.text
-
-            if not b or not e or not word:
-                continue
-
-            b = format_time(parse_time(b))
-            e = format_time(parse_time(e))
-
-            segment = f"<{b}>{word}<{e}>"
-
-            if prev_end and prev_end == b:
-                line += segment
+            if w.startswith("(") and w.endswith(")"):
+                result.append(f"[{start_w}]<{start_w}>{w}<{end_w}>")
             else:
-                line += " " + segment
+                text += f"<{start_w}>{w}<{end_w}> "
 
-            prev_end = e
+            t += dur
 
-        result.append(line.strip())
+        result.append(text.strip())
 
     return "\n".join(result)
 
 
-def get_lyrics(title, artist, duration=0):
+def main():
 
-    url = "https://lyrics-api.boidu.dev/getLyrics"
-
-    params = {
-        "s": title,
-        "a": artist,
-        "d": duration
-    }
-
-    r = requests.get(url, params=params)
-
-    if r.status_code == 200:
-        data = r.json()
-        return data.get("ttml")
-
-    return None
-
-
-@bot.message_handler(commands=['yt'])
-def handle(message):
+    url = input("YouTube URL: ")
 
     try:
 
-        link = message.text.split(" ",1)[1]
+        video_id = get_video_id(url)
 
-        video_id = extract_video_id(link)
+        lines = get_lyrics(video_id)
 
-        if not video_id:
-            bot.reply_to(message,"❌ لم أستطع استخراج video id")
+        if not lines:
+            print("❌ لم استطع جلب الكلمات")
             return
 
-        try:
-            info = yt.get_song(video_id)
-            video = info.get("videoDetails",{})
-        except:
-            video = {}
+        lrc = convert_lines(lines)
 
-        title = video.get("title")
-        artist = video.get("author")
-        duration = int(video.get("lengthSeconds",0))
+        with open("lyrics.lrc", "w", encoding="utf8") as f:
+            f.write(lrc)
 
-        if not title:
-
-            r = requests.get(f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}")
-            data = r.json()
-
-            title = data.get("title","Unknown")
-            artist = data.get("author_name","Unknown")
-
-        bot.reply_to(
-            message,
-            f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات..."
-        )
-
-        lyrics_ttml = get_lyrics(title,artist,duration)
-
-        if not lyrics_ttml:
-            bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
-            return
-
-        lyrics = convert_ttml(lyrics_ttml)
-
-        with open("lyrics.txt","w",encoding="utf-8") as f:
-            f.write(lyrics)
-
-        with open("lyrics.txt","rb") as f:
-            bot.send_document(message.chat.id,f)
+        print("✅ تم حفظ الملف: lyrics.lrc")
 
     except Exception as e:
+        print("❌ خطأ:")
+        print(e)
 
-        bot.send_message(message.chat.id,f"❌ خطأ:\n{str(e)}")
 
-
-bot.infinity_polling()
+if __name__ == "__main__":
+    main()
