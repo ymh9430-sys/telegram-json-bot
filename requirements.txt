@@ -1,6 +1,4 @@
 pyTelegramBotAPI
 requests
 ytmusicapi
-pyTelegramBotAPI
-requests
 yt-dlp
