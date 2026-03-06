@@ -1,101 +1,67 @@
-import telebot
-import os
-import re
+import requests
+from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
-TOKEN = os.getenv("TOKEN")
-bot = telebot.TeleBot(TOKEN)
+TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
 
-used_times = set()
 
-def format_time(seconds):
-    seconds = float(seconds)
-    minutes = int(seconds // 60)
-    remaining = seconds % 60
-    return f"{minutes:02d}:{remaining:06.3f}"
+def extract_video_id(url):
+    if "v=" in url:
+        return url.split("v=")[1].split("&")[0]
 
-def adjust_duplicate_time(seconds):
+    if "youtu.be/" in url:
+        return url.split("youtu.be/")[1].split("?")[0]
 
-    while round(seconds,3) in used_times:
-        seconds += 0.001
+    return None
 
-    used_times.add(round(seconds,3))
-    return seconds
 
-def to_seconds(t):
-    if ":" in t:
-        m, s = t.split(":")
-        return float(m)*60 + float(s)
-    return float(t)
+def get_lyrics(video_id):
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message,"ابعت النص وأنا هحوله")
+    url = "https://lyrics.api.dacubeking.com/lyrics"
 
-@bot.message_handler(content_types=['text'])
-def convert(message):
+    params = {
+        "videoId": video_id
+    }
 
-    global used_times
-    used_times = set()
+    r = requests.get(url, params=params)
 
-    text = message.text
-    lines = text.split("\n")
-    result = []
+    if r.status_code != 200:
+        return None
 
-    i = 0
-    while i < len(lines):
+    data = r.json()
 
-        line = lines[i]
+    if "lyrics" in data:
+        return data["lyrics"]
 
-        if line.startswith("["):
+    return None
 
-            time_match = re.search(r'\[(.*?)\]', line)
 
-            if time_match and i+1 < len(lines):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-                base_seconds = to_seconds(time_match.group(1))
+    text = update.message.text
 
-                base_seconds = adjust_duplicate_time(base_seconds)
+    video_id = extract_video_id(text)
 
-                line_time = format_time(base_seconds)
+    if not video_id:
+        await update.message.reply_text("ابعت رابط يوتيوب صحيح")
+        return
 
-                words_line = lines[i+1]
+    await update.message.reply_text("بجيب الكلمات...")
 
-                if words_line.startswith("<"):
+    lyrics = get_lyrics(video_id)
 
-                    words_line = words_line.strip("<>")
-                    words = words_line.split("|")
+    if not lyrics:
+        await update.message.reply_text("ملقتش كلمات للأغنية دي")
+        return
 
-                    new_line = f"[{line_time}]"
+    with open("lyrics.lrc", "w", encoding="utf-8") as f:
+        f.write(lyrics)
 
-                    for w in words:
+    await update.message.reply_document(open("lyrics.lrc", "rb"))
 
-                        parts = w.split(":")
 
-                        if len(parts) == 3:
+app = ApplicationBuilder().token(TOKEN).build()
 
-                            word = parts[0]
-                            start = format_time(to_seconds(parts[1]))
-                            end = format_time(to_seconds(parts[2]))
+app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-                            new_line += f"<{start}>{word}<{end}> "
-
-                    result.append(new_line.strip())
-
-                i += 1
-
-        i += 1
-
-    final = "\n".join(result)
-
-    if len(final) > 4000:
-
-        with open("lyrics.txt","w",encoding="utf-8") as f:
-            f.write(final)
-
-        bot.send_document(message.chat.id,open("lyrics.txt","rb"))
-        os.remove("lyrics.txt")
-
-    else:
-        bot.reply_to(message,final)
-
-bot.infinity_polling()
+app.run_polling()
