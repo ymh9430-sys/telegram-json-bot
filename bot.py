@@ -47,62 +47,67 @@ def format_time(sec):
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
-
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
-    used_times = []
+    used_times = set()
 
     for p in root.findall(".//tt:p", ns):
 
         line_begin = p.attrib.get("begin")
+        line_end = p.attrib.get("end")
 
-        if not line_begin:
+        if not line_begin or not line_end:
             continue
 
-        line_time_sec = parse_time(line_begin)
+        line_time = parse_time(line_begin)
 
-        while line_time_sec in used_times:
-            line_time_sec += 0.001
+        while line_time in used_times:
+            line_time += 0.001
 
-        used_times.append(line_time_sec)
+        used_times.add(line_time)
 
-        line_time = format_time(line_time_sec)
+        line_time_str = format_time(line_time)
 
-        line = f"[{line_time}]"
+        spans = p.findall("tt:span", ns)
 
-        spans = p.findall(".//tt:span", ns)
+        line = f"[{line_time_str}]"
 
-        words = []
-        last_end = None
+        prev_end = None
 
         for span in spans:
 
+            word = span.text
             begin = span.attrib.get("begin")
             end = span.attrib.get("end")
-            word = span.text
 
-            if not begin or not end or not word:
+            if not word or not begin or not end:
                 continue
 
-            b = parse_time(begin)
-            e = parse_time(end)
+            b = format_time(parse_time(begin))
+            e = format_time(parse_time(end))
 
-            b_fmt = format_time(b)
-            e_fmt = format_time(e)
+            segment = f"<{b}>{word}<{e}>"
 
-            segment = f"<{b_fmt}>{word}<{e_fmt}>"
-
-            if last_end is not None and abs(b - last_end) < 0.12:
-                words[-1] += segment
+            if prev_end and b == prev_end:
+                line += segment
             else:
-                words.append(segment)
+                line += " " + segment
 
-            last_end = e
+            prev_end = e
 
-        line += " ".join(words)
+        result.append(line.strip())
 
-        result.append(line)
+        # معالجة الكلمات بين الأقواس
+        full_text = "".join([s.text or "" for s in spans])
+
+        if "(" in full_text and ")" in full_text:
+
+            begin = format_time(parse_time(line_begin))
+            end = format_time(parse_time(line_end))
+
+            bracket_line = f"[{begin}]<{begin}>{full_text}<{end}>"
+            result.append(bracket_line)
 
     return "\n".join(result)
 
