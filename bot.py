@@ -31,10 +31,8 @@ def extract_video_id(url):
 def parse_time(t):
 
     if ":" in t:
-        parts = t.split(":")
-        if len(parts) == 2:
-            m, s = parts
-            return int(m) * 60 + float(s)
+        m, s = t.split(":")
+        return int(m) * 60 + float(s)
 
     return float(t)
 
@@ -51,11 +49,14 @@ def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
 
-    ns = {'tt': 'http://www.w3.org/ns/ttml'}
+    ns = {
+        'tt': 'http://www.w3.org/ns/ttml'
+    }
 
     result = []
     used_times = set()
 
+    # قراءة كل الفقرات
     for p in root.findall(".//tt:p", ns):
 
         begin = p.attrib.get("begin")
@@ -65,6 +66,7 @@ def convert_ttml(ttml):
 
         sec = parse_time(begin)
 
+        # منع تكرار نفس الوقت
         while round(sec,3) in used_times:
             sec += 0.001
 
@@ -74,10 +76,9 @@ def convert_ttml(ttml):
 
         line = f"[{line_time}]"
 
-        spans = p.findall("tt:span", ns)
+        spans = p.findall(".//tt:span", ns)
 
-        prev_word = ""
-        prev_end = ""
+        words = []
 
         for span in spans:
 
@@ -95,18 +96,12 @@ def convert_ttml(ttml):
             b = format_time(parse_time(b))
             e = format_time(parse_time(e))
 
-            segment = f"<{b}>{word}<{e}>"
+            words.append(f"<{b}>{word}<{e}>")
 
-            # دمج الكلمات المجزأة فقط
-            if prev_word and prev_word.isalpha() and word.isalpha() and len(word) <= 3:
-                line += segment
-            else:
-                line += " " + segment
+        if words:
+            line += " " + " ".join(words)
 
-            prev_word = word
-            prev_end = e
-
-        result.append(line.strip())
+        result.append(line)
 
     return "\n".join(result)
 
@@ -168,7 +163,6 @@ def handle(message):
         except:
             pass
 
-        # fallback
         if not title:
 
             try:
