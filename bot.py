@@ -1,18 +1,13 @@
 import telebot
 import requests
 from ytmusicapi import YTMusic
+import xml.etree.ElementTree as ET
+import tempfile
 
 BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
-
-def get_video_id(link):
-    if "v=" in link:
-        return link.split("v=")[1].split("&")[0]
-    if "youtu.be/" in link:
-        return link.split("youtu.be/")[1].split("?")[0]
-    return None
 
 
 def get_lyrics(title, artist, duration=0):
@@ -24,15 +19,56 @@ def get_lyrics(title, artist, duration=0):
         "d": duration
     }
 
-    try:
-        r = requests.get(url, params=params, timeout=15)
+    r = requests.get(url, params=params)
 
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("ttml")
-    except:
-        pass
+    if r.status_code == 200:
+        data = r.json()
+        return data.get("ttml")
+    return None
 
+
+def format_time(t):
+    if t is None:
+        return "00:00.000"
+
+    t = float(t.replace("s", ""))
+    minutes = int(t // 60)
+    seconds = int(t % 60)
+    millis = int((t - int(t)) * 1000)
+
+    return f"{minutes:02}:{seconds:02}.{millis:03}"
+
+
+def ttml_to_word_lrc(ttml):
+
+    root = ET.fromstring(ttml)
+
+    lines = []
+
+    for p in root.iter():
+        if p.tag.endswith("p"):
+
+            line_start = format_time(p.attrib.get("begin"))
+            words_line = f"[{line_start}]"
+
+            for span in p:
+
+                word = span.text.strip() if span.text else ""
+                start = format_time(span.attrib.get("begin"))
+                end = format_time(span.attrib.get("end"))
+
+                words_line += f"<{start}>{word}<{end}> "
+
+            lines.append(words_line.strip())
+
+    return "\n".join(lines)
+
+
+def extract_video_id(link):
+    if "watch?v=" in link:
+        return link.split("watch?v=")[1].split("&")[0]
+    if "youtu.be/" in link:
+        return link.split("youtu.be/")[1].split("?")[0]
     return None
 
 
@@ -41,53 +77,37 @@ def handle(message):
 
     try:
         link = message.text.split(" ",1)[1]
-    except:
-        bot.reply_to(message,"❌ ابعت الامر كده:\n/yt link")
-        return
 
-    video_id = get_video_id(link)
+        video_id = extract_video_id(link)
 
-    if not video_id:
-        bot.reply_to(message,"❌ الرابط غير صحيح")
-        return
+        if not video_id:
+            bot.reply_to(message,"❌ رابط غير صالح")
+            return
 
-    bot.reply_to(message,"🔎 جاري جلب معلومات الاغنية...")
-
-    try:
         info = yt.get_song(video_id)
-        details = info.get("videoDetails",{})
 
-        title = details.get("title")
-        artist = details.get("author")
-        duration = int(details.get("lengthSeconds",0))
+        title = info["videoDetails"]["title"]
+        artist = info["videoDetails"]["author"]
+        duration = int(info["videoDetails"]["lengthSeconds"])
 
-    except:
-        bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
-        return
+        bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري تحميل الكلمات...")
 
-    if not title:
-        bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
-        return
+        ttml = get_lyrics(title,artist,duration)
 
-    bot.send_message(message.chat.id,f"🎵 {title}\n👤 {artist}\n\n🔎 جاري البحث عن الكلمات...")
+        if not ttml:
+            bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
+            return
 
-    lyrics = get_lyrics(title,artist,duration)
+        lyrics = ttml_to_word_lrc(ttml)
 
-    if not lyrics:
-        bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
-        return
+        file = tempfile.NamedTemporaryFile(delete=False,suffix=".txt",mode="w",encoding="utf-8")
+        file.write(lyrics)
+        file.close()
 
-    try:
-        filename = "lyrics.txt"
-
-        with open(filename,"w",encoding="utf-8") as f:
-            f.write(lyrics)
-
-        with open(filename,"rb") as f:
-            bot.send_document(message.chat.id,f)
+        bot.send_document(message.chat.id,open(file.name,"rb"))
 
     except Exception as e:
-        bot.send_message(message.chat.id,f"❌ خطأ:\n{e}")
+        bot.send_message(message.chat.id,f"❌ خطأ:\n{str(e)}")
 
 
 bot.infinity_polling()
