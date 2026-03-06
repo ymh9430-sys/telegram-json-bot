@@ -50,6 +50,7 @@ def convert_ttml(ttml):
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
+    used_times = set()
 
     for p in root.findall(".//tt:p", ns):
 
@@ -58,13 +59,22 @@ def convert_ttml(ttml):
         if not line_begin:
             continue
 
-        line_time = format_time(parse_time(line_begin))
+        time_sec = parse_time(line_begin)
+
+        while round(time_sec,3) in used_times:
+            time_sec += 0.001
+
+        used_times.add(round(time_sec,3))
+
+        line_time = format_time(time_sec)
 
         line = f"[{line_time}]"
 
+        spans = p.findall("tt:span", ns)
+
         words = []
 
-        for span in p.findall("tt:span", ns):
+        for i, span in enumerate(spans):
 
             begin = span.attrib.get("begin")
             end = span.attrib.get("end")
@@ -76,7 +86,20 @@ def convert_ttml(ttml):
             b = format_time(parse_time(begin))
             e = format_time(parse_time(end))
 
-            words.append(f"<{b}>{word}<{e}>")
+            piece = f"<{b}>{word}<{e}>"
+
+            if i > 0:
+
+                prev_end = parse_time(spans[i-1].attrib.get("end"))
+                curr_begin = parse_time(begin)
+
+                if curr_begin - prev_end < 0.15:
+                    words[-1] += piece
+                else:
+                    words.append(piece)
+
+            else:
+                words.append(piece)
 
         line += " ".join(words)
 
