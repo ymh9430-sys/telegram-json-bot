@@ -1,21 +1,34 @@
 import requests
+import re
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 API_URL = "https://lyrics.api.dacubeking.com/lyrics"
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ابعت اسم الأغنية بالشكل ده:\nsong - artist")
+def extract_video_id(url):
+    match = re.search(r"v=([a-zA-Z0-9_-]{11})", url)
+    if match:
+        return match.group(1)
+    return None
 
 
-async def get_lyrics(song, artist):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    text = update.message.text
+
+    video_id = extract_video_id(text)
+
+    if not video_id:
+        await update.message.reply_text("ابعت رابط يوتيوب للأغنية")
+        return
+
+    await update.message.reply_text("بدور على الكلمات...")
+
     params = {
-        "videoId": "test",
-        "song": song,
-        "artist": artist
+        "videoId": video_id
     }
 
     try:
@@ -23,47 +36,25 @@ async def get_lyrics(song, artist):
         data = r.json()
 
         if "lyrics" not in data:
-            return None
+            await update.message.reply_text("مش لاقي كلمات الأغنية")
+            return
 
-        lines = []
+        lyrics = ""
+
         for line in data["lyrics"]:
-            lines.append(line["text"])
+            lyrics += line["text"] + "\n"
 
-        return "\n".join(lines)
-
-    except:
-        return None
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    text = update.message.text
-
-    if "-" not in text:
-        await update.message.reply_text("اكتبها كده:\nsong - artist")
-        return
-
-    song, artist = text.split("-", 1)
-    song = song.strip()
-    artist = artist.strip()
-
-    await update.message.reply_text("بدور على الكلمات...")
-
-    lyrics = await get_lyrics(song, artist)
-
-    if lyrics:
         if len(lyrics) > 4000:
             lyrics = lyrics[:4000]
 
         await update.message.reply_text(lyrics)
 
-    else:
-        await update.message.reply_text("مش لاقي كلمات الأغنية 😢")
+    except:
+        await update.message.reply_text("حصل خطأ في السيرفر")
 
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 app.run_polling()
