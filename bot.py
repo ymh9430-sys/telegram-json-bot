@@ -11,6 +11,7 @@ yt = YTMusic()
 
 
 def get_lyrics(title, artist, duration=0):
+
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
     params = {
@@ -24,11 +25,13 @@ def get_lyrics(title, artist, duration=0):
     if r.status_code == 200:
         data = r.json()
         return data.get("ttml")
+
     return None
 
 
 def format_time(t):
-    if t is None:
+
+    if not t:
         return "00:00.000"
 
     t = float(t.replace("s", ""))
@@ -49,7 +52,7 @@ def ttml_to_word_lrc(ttml):
         if p.tag.endswith("p"):
 
             line_start = format_time(p.attrib.get("begin"))
-            words_line = f"[{line_start}]"
+            text = f"[{line_start}]"
 
             for span in p:
 
@@ -57,25 +60,49 @@ def ttml_to_word_lrc(ttml):
                 start = format_time(span.attrib.get("begin"))
                 end = format_time(span.attrib.get("end"))
 
-                words_line += f"<{start}>{word}<{end}> "
+                text += f"<{start}>{word}<{end}> "
 
-            lines.append(words_line.strip())
+            lines.append(text.strip())
 
     return "\n".join(lines)
 
 
 def extract_video_id(link):
+
     if "watch?v=" in link:
         return link.split("watch?v=")[1].split("&")[0]
+
     if "youtu.be/" in link:
         return link.split("youtu.be/")[1].split("?")[0]
+
     return None
+
+
+def get_video_info(video_id):
+
+    try:
+        info = yt.get_song(video_id)
+
+        details = info.get("videoDetails", {})
+
+        title = details.get("title")
+        artist = details.get("author")
+        duration = int(details.get("lengthSeconds", 0))
+
+        if title and artist:
+            return title, artist, duration
+
+    except:
+        pass
+
+    return None, None, 0
 
 
 @bot.message_handler(commands=['yt'])
 def handle(message):
 
     try:
+
         link = message.text.split(" ",1)[1]
 
         video_id = extract_video_id(link)
@@ -84,11 +111,11 @@ def handle(message):
             bot.reply_to(message,"❌ رابط غير صالح")
             return
 
-        info = yt.get_song(video_id)
+        title, artist, duration = get_video_info(video_id)
 
-        title = info["videoDetails"]["title"]
-        artist = info["videoDetails"]["author"]
-        duration = int(info["videoDetails"]["lengthSeconds"])
+        if not title:
+            bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
+            return
 
         bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري تحميل الكلمات...")
 
