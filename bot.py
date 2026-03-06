@@ -17,7 +17,7 @@ def extract_video_id(url):
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
         r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
         r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})"
+        r"shorts/([a-zA-Z0-9_-]{11})"
     ]
 
     for p in patterns:
@@ -31,8 +31,10 @@ def extract_video_id(url):
 def parse_time(t):
 
     if ":" in t:
-        m, s = t.split(":")
-        return int(m) * 60 + float(s)
+        parts = t.split(":")
+        if len(parts) == 2:
+            m, s = parts
+            return int(m) * 60 + float(s)
 
     return float(t)
 
@@ -70,10 +72,12 @@ def convert_ttml(ttml):
 
         line_time = format_time(sec)
 
-        spans = p.findall(".//tt:span", ns)
-
         line = f"[{line_time}]"
+
+        spans = p.findall("tt:span", ns)
+
         prev_word = ""
+        prev_end = ""
 
         for span in spans:
 
@@ -93,17 +97,19 @@ def convert_ttml(ttml):
 
             segment = f"<{b}>{word}<{e}>"
 
-            # لو الكلمة جزء من كلمة قبلها (زي bloo + dy)
-            if prev_word and word.islower() and prev_word.islower() and len(word) <= 3:
+            # دمج الكلمات المجزأة فقط
+            if prev_word and prev_word.isalpha() and word.isalpha() and len(word) <= 3:
                 line += segment
             else:
                 line += " " + segment
 
             prev_word = word
+            prev_end = e
 
         result.append(line.strip())
 
     return "\n".join(result)
+
 
 def get_lyrics(title, artist, duration=0):
 
@@ -117,11 +123,14 @@ def get_lyrics(title, artist, duration=0):
 
     try:
 
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=15)
 
         if r.status_code == 200:
+
             data = r.json()
-            return data.get("ttml")
+
+            if data and data.get("ttml"):
+                return data["ttml"]
 
     except:
         pass
@@ -147,7 +156,9 @@ def handle(message):
         duration = 0
 
         try:
+
             info = yt.get_song(video_id)
+
             video = info.get("videoDetails",{})
 
             title = video.get("title")
@@ -157,13 +168,26 @@ def handle(message):
         except:
             pass
 
+        # fallback
         if not title:
 
-            r = requests.get(f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}")
-            data = r.json()
+            try:
 
-            title = data.get("title","Unknown")
-            artist = data.get("author_name","Unknown")
+                r = requests.get(
+                    f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}"
+                )
+
+                data = r.json()
+
+                title = data.get("title")
+                artist = data.get("author_name")
+
+            except:
+                pass
+
+        if not title:
+            bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
+            return
 
         bot.reply_to(
             message,
