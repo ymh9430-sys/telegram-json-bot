@@ -63,7 +63,6 @@ def convert_ttml(ttml):
 
         sec = parse_time(begin)
 
-        # حل مشكلة السطور بنفس الوقت
         while round(sec,3) in used_times:
             sec += 0.001
 
@@ -71,17 +70,16 @@ def convert_ttml(ttml):
 
         line_time = format_time(sec)
 
-        words = []
-
         spans = p.findall(".//tt:span", ns)
 
-        prev_end = None
+        line = f"[{line_time}]"
+        prev_word = ""
 
         for span in spans:
 
-            text = span.text
+            word = span.text
 
-            if not text:
+            if not word:
                 continue
 
             b = span.attrib.get("begin")
@@ -93,30 +91,15 @@ def convert_ttml(ttml):
             b = format_time(parse_time(b))
             e = format_time(parse_time(e))
 
-            segment = f"<{b}>{text}<{e}>"
+            segment = f"<{b}>{word}<{e}>"
 
-            # الكلمات المجزأة
-            if prev_end and prev_end == b:
-                words[-1] = words[-1] + segment
+            # لو الكلمة جزء من كلمة قبلها (زي bloo + dy)
+            if prev_word and word.islower() and prev_word.islower() and len(word) <= 3:
+                line += segment
             else:
-                words.append(segment)
+                line += " " + segment
 
-            prev_end = e
-
-        if not words:
-            continue
-
-        line = f"[{line_time}]"
-
-        for w in words:
-
-            text_only = re.sub(r"<.*?>", "", w)
-
-            # لو الكلمة بين اقواس
-            if text_only.startswith("(") and text_only.endswith(")"):
-                result.append(f"[{line_time}]{w}")
-            else:
-                line += " " + w
+            prev_word = word
 
         result.append(line.strip())
 
