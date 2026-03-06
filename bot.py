@@ -9,6 +9,55 @@ BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
+# ---------- time helpers ----------
+
+def parse_time(t):
+    if ":" in t:
+        parts = t.split(":")
+        if len(parts) == 2:
+            m = int(parts[0])
+            s = float(parts[1])
+            return m * 60 + s
+        elif len(parts) == 3:
+            h = int(parts[0])
+            m = int(parts[1])
+            s = float(parts[2])
+            return h * 3600 + m * 60 + s
+    return float(t)
+
+def to_lrc_time(sec):
+    m = int(sec // 60)
+    s = sec % 60
+    return f"{m:02}:{s:06.3f}"
+
+# ---------- lyrics parser ----------
+
+def ttml_to_word_lrc(ttml):
+
+    root = ET.fromstring(ttml)
+    ns = {"tt": "http://www.w3.org/ns/ttml"}
+
+    lines = []
+
+    for p in root.findall(".//tt:p", ns):
+
+        line_begin = parse_time(p.attrib.get("begin", "0"))
+        line = f"[{to_lrc_time(line_begin)}]"
+
+        for span in p.findall("tt:span", ns):
+
+            word = (span.text or "").strip()
+
+            begin = to_lrc_time(parse_time(span.attrib["begin"]))
+            end = to_lrc_time(parse_time(span.attrib["end"]))
+
+            line += f"<{begin}>{word}<{end}> "
+
+        lines.append(line.strip())
+
+    return "\n".join(lines)
+
+# ---------- fetch lyrics ----------
 
 def get_lyrics(title, artist, duration=0):
 
@@ -28,75 +77,7 @@ def get_lyrics(title, artist, duration=0):
 
     return None
 
-
-def format_time(t):
-
-    if not t:
-        return "00:00.000"
-
-    t = float(t.replace("s", ""))
-    minutes = int(t // 60)
-    seconds = int(t % 60)
-    millis = int((t - int(t)) * 1000)
-
-    return f"{minutes:02}:{seconds:02}.{millis:03}"
-
-
-def ttml_to_word_lrc(ttml):
-
-    root = ET.fromstring(ttml)
-
-    lines = []
-
-    for p in root.iter():
-        if p.tag.endswith("p"):
-
-            line_start = format_time(p.attrib.get("begin"))
-            text = f"[{line_start}]"
-
-            for span in p:
-
-                word = span.text.strip() if span.text else ""
-                start = format_time(span.attrib.get("begin"))
-                end = format_time(span.attrib.get("end"))
-
-                text += f"<{start}>{word}<{end}> "
-
-            lines.append(text.strip())
-
-    return "\n".join(lines)
-
-
-def extract_video_id(link):
-
-    if "watch?v=" in link:
-        return link.split("watch?v=")[1].split("&")[0]
-
-    if "youtu.be/" in link:
-        return link.split("youtu.be/")[1].split("?")[0]
-
-    return None
-
-
-def get_video_info(video_id):
-
-    try:
-        info = yt.get_song(video_id)
-
-        details = info.get("videoDetails", {})
-
-        title = details.get("title")
-        artist = details.get("author")
-        duration = int(details.get("lengthSeconds", 0))
-
-        if title and artist:
-            return title, artist, duration
-
-    except:
-        pass
-
-    return None, None, 0
-
+# ---------- telegram command ----------
 
 @bot.message_handler(commands=['yt'])
 def handle(message):
@@ -105,19 +86,24 @@ def handle(message):
 
         link = message.text.split(" ",1)[1]
 
-        video_id = extract_video_id(link)
+        if "v=" in link:
+            video_id = link.split("v=")[1].split("&")[0]
+        else:
+            video_id = link.split("/")[-1]
 
-        if not video_id:
-            bot.reply_to(message,"❌ رابط غير صالح")
+        info = yt.get_song(video_id)
+
+        video = info.get("videoDetails")
+
+        if not video:
+            bot.reply_to(message,"❌ لم استطع جلب معلومات الفيديو")
             return
 
-        title, artist, duration = get_video_info(video_id)
+        title = video["title"]
+        artist = video["author"]
+        duration = int(video["lengthSeconds"])
 
-        if not title:
-            bot.send_message(message.chat.id,"❌ لم استطع جلب معلومات الفيديو")
-            return
-
-        bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري تحميل الكلمات...")
+        bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات...")
 
         ttml = get_lyrics(title,artist,duration)
 
@@ -127,14 +113,14 @@ def handle(message):
 
         lyrics = ttml_to_word_lrc(ttml)
 
-        file = tempfile.NamedTemporaryFile(delete=False,suffix=".txt",mode="w",encoding="utf-8")
-        file.write(lyrics)
-        file.close()
+        with tempfile.NamedTemporaryFile(delete=False,suffix=".txt") as f:
+            f.write(lyrics.encode("utf-8"))
+            path = f.name
 
-        bot.send_document(message.chat.id,open(file.name,"rb"))
+        with open(path,"rb") as file:
+            bot.send_document(message.chat.id,file)
 
     except Exception as e:
-        bot.send_message(message.chat.id,f"❌ خطأ:\n{str(e)}")
-
+        bot.send_message(message.chat.id,f"❌ خطأ:\n{e}")
 
 bot.infinity_polling()
