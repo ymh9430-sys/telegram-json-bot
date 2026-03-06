@@ -51,7 +51,8 @@ def convert_ttml(ttml):
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
-    used_times = set()
+
+    last_line_time = None
 
     for p in root.findall(".//tt:p", ns):
 
@@ -62,10 +63,10 @@ def convert_ttml(ttml):
 
         sec = parse_time(begin)
 
-        while round(sec,3) in used_times:
+        if last_line_time and abs(sec - last_line_time) < 0.001:
             sec += 0.001
 
-        used_times.add(round(sec,3))
+        last_line_time = sec
 
         line_time = format_time(sec)
 
@@ -111,15 +112,11 @@ def get_lyrics(title, artist, duration=0):
         "d": duration
     }
 
-    try:
-        r = requests.get(url, params=params, timeout=10)
+    r = requests.get(url, params=params)
 
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("ttml")
-
-    except:
-        return None
+    if r.status_code == 200:
+        data = r.json()
+        return data.get("ttml")
 
     return None
 
