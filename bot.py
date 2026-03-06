@@ -46,36 +46,32 @@ def format_time(sec):
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
-
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
-    used_times = set()
+    used_times = []
 
     for p in root.findall(".//tt:p", ns):
 
         line_begin = p.attrib.get("begin")
-
         if not line_begin:
             continue
 
         line_time_sec = parse_time(line_begin)
 
-        # حل مشكلة السطرين بنفس التوقيت
-        while round(line_time_sec, 3) in used_times:
+        while any(abs(line_time_sec - t) < 0.001 for t in used_times):
             line_time_sec += 0.001
 
-        used_times.add(round(line_time_sec, 3))
+        used_times.append(line_time_sec)
 
         line_time = format_time(line_time_sec)
-
         line = f"[{line_time}]"
 
         spans = p.findall("tt:span", ns)
 
-        words = []
+        parts = []
 
-        for i, span in enumerate(spans):
+        for span in spans:
 
             begin = span.attrib.get("begin")
             end = span.attrib.get("end")
@@ -87,25 +83,30 @@ def convert_ttml(ttml):
             b = format_time(parse_time(begin))
             e = format_time(parse_time(end))
 
-            part = f"<{b}>{word}<{e}>"
+            parts.append((b, e, word))
 
-            words.append(part)
+        merged = []
 
-        # دمج الأجزاء بدون مسافة لو الكلمة متقسمة
-        merged_words = []
+        for i, (b, e, word) in enumerate(parts):
 
-        for i in range(len(words)):
-            if i > 0:
-                prev_end = re.search(r"<(.+?)>$", words[i-1]).group(1)
-                curr_begin = re.search(r"^<(.+?)>", words[i]).group(1)
+            segment = f"<{b}>{word}<{e}>"
 
-                if prev_end == curr_begin:
-                    merged_words[-1] += words[i]
+            if merged:
+                prev_b, prev_e, prev_word = merged[-1]
+
+                if abs(parse_time(b) - parse_time(prev_e)) < 0.15:
+                    merged[-1] = (
+                        prev_b,
+                        e,
+                        prev_word + segment
+                    )
                     continue
 
-            merged_words.append(words[i])
+            merged.append((b, e, segment))
 
-        line += " ".join(merged_words)
+        words = [m[2] for m in merged]
+
+        line += " ".join(words)
 
         result.append(line)
 
