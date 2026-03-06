@@ -1,7 +1,7 @@
 import telebot
 import requests
 from ytmusicapi import YTMusic
-import re
+import urllib.parse as urlparse
 
 BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
@@ -9,9 +9,16 @@ bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
 def extract_video_id(url):
-    match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url)
-    if match:
-        return match.group(1)
+    parsed = urlparse.urlparse(url)
+
+    if parsed.query:
+        params = urlparse.parse_qs(parsed.query)
+        if "v" in params:
+            return params["v"][0]
+
+    if "youtu.be" in parsed.netloc:
+        return parsed.path[1:]
+
     return None
 
 
@@ -24,22 +31,23 @@ def get_lyrics(title, artist, duration=0):
         "d": duration
     }
 
-    r = requests.get(url, params=params)
+    try:
+        r = requests.get(url, params=params, timeout=15)
 
-    if r.status_code == 200:
-        data = r.json()
-        return data.get("ttml")
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("ttml")
+
+    except:
+        pass
 
     return None
 
 
 @bot.message_handler(commands=['yt'])
 def handle(message):
-    try:
 
-        if len(message.text.split()) < 2:
-            bot.reply_to(message, "ابعت رابط يوتيوب بعد الأمر\n/yt link")
-            return
+    try:
 
         link = message.text.split(" ",1)[1]
 
@@ -51,27 +59,29 @@ def handle(message):
 
         info = yt.get_song(video_id)
 
-        if not info or "videoDetails" not in info:
-            bot.reply_to(message,"❌ لم استطع جلب معلومات الفيديو")
-            return
+        title = info["videoDetails"]["title"]
+        artist = info["videoDetails"]["author"]
+        duration = int(info["videoDetails"]["lengthSeconds"])
 
-        details = info["videoDetails"]
-
-        title = details["title"]
-        artist = details["author"]
-        duration = int(details["lengthSeconds"])
-
-        bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات...")
+        bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\n🔎 جاري البحث عن الكلمات...")
 
         lyrics = get_lyrics(title,artist,duration)
 
         if lyrics:
-            bot.send_message(message.chat.id,lyrics[:4000])
+
+            if len(lyrics) > 4000:
+                lyrics = lyrics[:4000]
+
+            bot.send_message(message.chat.id,lyrics)
+
         else:
             bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
 
     except Exception as e:
-        bot.send_message(message.chat.id,"خطأ:\n"+str(e))
 
+        bot.send_message(message.chat.id,f"خطأ:\n{e}")
+
+
+print("Bot started...")
 
 bot.infinity_polling()
