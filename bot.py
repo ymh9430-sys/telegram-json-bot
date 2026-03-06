@@ -1,101 +1,50 @@
-import asyncio
-import aiohttp
-from playwright.async_api import async_playwright
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+import telebot
+import requests
+from ytmusicapi import YTMusic
 
-TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
+BOT_TOKEN = "PUT_YOUR_TOKEN_HERE"
 
-jwt_token = None
+bot = telebot.TeleBot(BOT_TOKEN)
+yt = YTMusic()
 
-
-async def get_jwt():
-    global jwt_token
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-
-        page = await context.new_page()
-
-        async def handle_request(request):
-            global jwt_token
-            if "lyrics.api.dacubeking.com" in request.url:
-                headers = request.headers
-                if "authorization" in headers:
-                    jwt_token = headers["authorization"]
-
-        page.on("request", handle_request)
-
-        await page.goto("https://music.youtube.com")
-
-        await asyncio.sleep(20)
-
-        await browser.close()
-
-    return jwt_token
-
-
-async def get_lyrics(video_id):
-
-    global jwt_token
-
-    if not jwt_token:
-        jwt_token = await get_jwt()
-
-    url = "https://lyrics.api.dacubeking.com/lyrics"
-
-    headers = {
-        "Authorization": jwt_token
-    }
+def get_lyrics(title, artist, duration=0):
+    url = "https://lyrics-api.boidu.dev/getLyrics"
 
     params = {
-        "videoId": video_id
+        "s": title,
+        "a": artist,
+        "d": duration
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers, params=params) as r:
-            return await r.text()
+    r = requests.get(url, params=params)
 
-
-def extract_video_id(url):
-
-    if "v=" in url:
-        return url.split("v=")[1].split("&")[0]
-
-    if "youtu.be/" in url:
-        return url.split("youtu.be/")[1].split("?")[0]
-
+    if r.status_code == 200:
+        data = r.json()
+        return data.get("ttml")
     return None
 
 
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    text = update.message.text
-
-    video_id = extract_video_id(text)
-
-    if not video_id:
-        await update.message.reply_text("ابعت لينك YouTube أو YouTube Music صحيح")
-        return
-
+@bot.message_handler(commands=['yt'])
+def handle(message):
     try:
-        lyrics = await get_lyrics(video_id)
+        link = message.text.split(" ",1)[1]
 
-        if not lyrics:
-            await update.message.reply_text("ملقتش lyrics للأغنية")
-            return
+        search = yt.get_song(link.split("v=")[1])
 
-        await update.message.reply_text(lyrics[:4000])
+        title = search["videoDetails"]["title"]
+        artist = search["videoDetails"]["author"]
+        duration = int(search["videoDetails"]["lengthSeconds"])
+
+        bot.reply_to(message,f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات...")
+
+        lyrics = get_lyrics(title,artist,duration)
+
+        if lyrics:
+            bot.send_message(message.chat.id,lyrics[:4000])
+        else:
+            bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
 
     except Exception as e:
-        await update.message.reply_text("حصل خطأ أثناء جلب الكلمات")
+        bot.send_message(message.chat.id,f"Error\n{e}")
 
-
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
-
-print("Bot Started")
-
-app.run_polling()
+bot.infinity_polling()
