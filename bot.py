@@ -61,7 +61,6 @@ def convert_ttml(ttml):
 
         line_sec = parse_time(line_begin)
 
-        # منع تكرار نفس وقت البداية
         while round(line_sec, 3) in used_times:
             line_sec += 0.001
 
@@ -75,7 +74,7 @@ def convert_ttml(ttml):
 
         words = []
 
-        for i, span in enumerate(spans):
+        for span in spans:
 
             begin = span.attrib.get("begin")
             end = span.attrib.get("end")
@@ -87,18 +86,22 @@ def convert_ttml(ttml):
             b = format_time(parse_time(begin))
             e = format_time(parse_time(end))
 
-            words.append(f"<{b}>{word}<{e}>")
+            words.append((b, e, word))
 
-        # دمج الكلمات
-        text = ""
-        for w in words:
+        for i, (b, e, word) in enumerate(words):
 
-            if text.endswith(">"):
-                text += " " + w
+            part = f"<{b}>{word}<{e}>"
+
+            if i == 0:
+                line += part
             else:
-                text += w
+                prev_word = words[i-1][2]
 
-        line += text
+                # لو الكلمة السابقة جزء كلمة (مافيش مسافة في النهاية)
+                if prev_word.endswith("-"):
+                    line += part
+                else:
+                    line += " " + part
 
         result.append(line)
 
@@ -124,41 +127,6 @@ def get_lyrics(title, artist, duration=0):
     return None
 
 
-def get_video_info(video_id):
-    try:
-
-        info = yt.get_song(video_id)
-
-        if info and "videoDetails" in info:
-            video = info["videoDetails"]
-            return (
-                video.get("title"),
-                video.get("author"),
-                int(video.get("lengthSeconds", 0))
-            )
-
-    except:
-        pass
-
-    # fallback search
-    try:
-
-        results = yt.search(video_id)
-
-        if results:
-            r = results[0]
-            return (
-                r.get("title"),
-                r.get("artists")[0]["name"] if r.get("artists") else "",
-                0
-            )
-
-    except:
-        pass
-
-    return None, None, None
-
-
 @bot.message_handler(commands=['yt'])
 def handle(message):
 
@@ -172,7 +140,17 @@ def handle(message):
             bot.reply_to(message, "❌ لم أستطع استخراج video id")
             return
 
-        title, artist, duration = get_video_info(video_id)
+        info = yt.get_song(video_id)
+
+        if not info:
+            bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
+            return
+
+        video = info.get("videoDetails", {})
+
+        title = video.get("title")
+        artist = video.get("author")
+        duration = int(video.get("lengthSeconds", 0))
 
         if not title:
             bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
