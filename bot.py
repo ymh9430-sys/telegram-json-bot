@@ -1,55 +1,80 @@
+import asyncio
 import requests
-import re
+from playwright.async_api import async_playwright
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 
 TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
-API_URL = "https://lyrics.api.dacubeking.com/lyrics"
+jwt_token = None
 
 
-def extract_video_id(url):
-    match = re.search(r"v=([a-zA-Z0-9_-]{11})", url)
-    if match:
-        return match.group(1)
-    return None
+async def get_jwt():
+    global jwt_token
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+
+        page = await context.new_page()
+
+        async def handle_request(request):
+            global jwt_token
+            if "lyrics.api.dacubeking.com" in request.url:
+                headers = request.headers
+                if "authorization" in headers:
+                    jwt_token = headers["authorization"]
+
+        page.on("request", handle_request)
+
+        await page.goto("https://music.youtube.com")
+
+        await asyncio.sleep(10)
+
+        await browser.close()
+
+    return jwt_token
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_lyrics(video_id):
+
+    global jwt_token
+
+    if not jwt_token:
+        jwt_token = await get_jwt()
+
+    url = "https://lyrics.api.dacubeking.com/lyrics"
+
+    headers = {
+        "Authorization": jwt_token
+    }
+
+    params = {
+        "videoId": video_id
+    }
+
+    r = requests.get(url, headers=headers, params=params)
+
+    return r.text
+
+
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text
 
-    video_id = extract_video_id(text)
-
-    if not video_id:
-        await update.message.reply_text("ابعت رابط يوتيوب")
+    if "youtube.com" not in text:
+        await update.message.reply_text("ابعت لينك YouTube Music")
         return
 
-    await update.message.reply_text("بدور على الكلمات...")
+    video_id = text.split("v=")[1]
 
-    try:
-        r = requests.get(API_URL, params={"videoId": video_id})
-        data = r.json()
+    lyrics = await get_lyrics(video_id)
 
-        if "syncedLyrics" in data and data["syncedLyrics"]:
-            lyrics = data["syncedLyrics"]
-        elif "lyrics" in data and data["lyrics"]:
-            lyrics = data["lyrics"]
-        else:
-            await update.message.reply_text("مش لاقي كلمات للأغنية")
-            return
-
-        if len(lyrics) > 4000:
-            lyrics = lyrics[:4000]
-
-        await update.message.reply_text(lyrics)
-
-    except Exception as e:
-        await update.message.reply_text("خطأ: " + str(e))
+    await update.message.reply_text(lyrics[:4000])
 
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(MessageHandler(filters.TEXT, handle_message))
+app.add_handler(MessageHandler(filters.TEXT, handle))
 
 app.run_polling()
