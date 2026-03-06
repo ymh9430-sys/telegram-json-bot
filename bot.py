@@ -22,35 +22,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     video_id = extract_video_id(text)
 
     if not video_id:
-        await update.message.reply_text("ابعت رابط يوتيوب للأغنية")
+        await update.message.reply_text("ابعت رابط يوتيوب")
         return
 
     await update.message.reply_text("بدور على الكلمات...")
 
-    params = {
-        "videoId": video_id
-    }
-
     try:
-        r = requests.get(API_URL, params=params)
+        r = requests.get(API_URL, params={"videoId": video_id})
         data = r.json()
 
-        if "lyrics" not in data:
-            await update.message.reply_text("مش لاقي كلمات الأغنية")
+        if "syncedLyrics" in data and data["syncedLyrics"]:
+            lyrics = data["syncedLyrics"]
+        elif "lyrics" in data and data["lyrics"]:
+            lyrics = data["lyrics"]
+        else:
+            await update.message.reply_text("مش لاقي كلمات للأغنية")
             return
-
-        lyrics = ""
-
-        for line in data["lyrics"]:
-            lyrics += line["text"] + "\n"
 
         if len(lyrics) > 4000:
             lyrics = lyrics[:4000]
 
         await update.message.reply_text(lyrics)
 
-    except:
-        await update.message.reply_text("حصل خطأ في السيرفر")
+    except Exception as e:
+        await update.message.reply_text("خطأ: " + str(e))
 
 
 app = ApplicationBuilder().token(TOKEN).build()
