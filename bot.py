@@ -15,7 +15,8 @@ def extract_video_id(url):
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
+        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
+        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
     ]
 
     for p in patterns:
@@ -54,56 +55,48 @@ def convert_ttml(ttml):
 
     for p in root.findall(".//tt:p", ns):
 
-        line_begin = p.attrib.get("begin")
+        begin = p.attrib.get("begin")
 
-        if not line_begin:
+        if not begin:
             continue
 
-        line_sec = parse_time(line_begin)
+        sec = parse_time(begin)
 
-        while round(line_sec, 3) in used_times:
-            line_sec += 0.001
+        while round(sec,3) in used_times:
+            sec += 0.001
 
-        used_times.add(round(line_sec, 3))
+        used_times.add(round(sec,3))
 
-        line_time = format_time(line_sec)
+        line_time = format_time(sec)
 
         line = f"[{line_time}]"
 
         spans = p.findall("tt:span", ns)
 
-        words = []
+        prev_end = None
 
         for span in spans:
 
-            begin = span.attrib.get("begin")
-            end = span.attrib.get("end")
+            b = span.attrib.get("begin")
+            e = span.attrib.get("end")
             word = span.text
 
-            if not begin or not end or not word:
+            if not b or not e or not word:
                 continue
 
-            b = format_time(parse_time(begin))
-            e = format_time(parse_time(end))
+            b = format_time(parse_time(b))
+            e = format_time(parse_time(e))
 
-            words.append((b, e, word))
+            segment = f"<{b}>{word}<{e}>"
 
-        for i, (b, e, word) in enumerate(words):
-
-            part = f"<{b}>{word}<{e}>"
-
-            if i == 0:
-                line += part
+            if prev_end and prev_end == b:
+                line += segment
             else:
-                prev_word = words[i-1][2]
+                line += " " + segment
 
-                # لو الكلمة السابقة جزء كلمة (مافيش مسافة في النهاية)
-                if prev_word.endswith("-"):
-                    line += part
-                else:
-                    line += " " + part
+            prev_end = e
 
-        result.append(line)
+        result.append(line.strip())
 
     return "\n".join(result)
 
@@ -118,11 +111,15 @@ def get_lyrics(title, artist, duration=0):
         "d": duration
     }
 
-    r = requests.get(url, params=params)
+    try:
+        r = requests.get(url, params=params, timeout=10)
 
-    if r.status_code == 200:
-        data = r.json()
-        return data.get("ttml")
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("ttml")
+
+    except:
+        return None
 
     return None
 
@@ -132,51 +129,54 @@ def handle(message):
 
     try:
 
-        link = message.text.split(" ", 1)[1]
+        link = message.text.split(" ",1)[1]
 
         video_id = extract_video_id(link)
 
         if not video_id:
-            bot.reply_to(message, "❌ لم أستطع استخراج video id")
+            bot.reply_to(message,"❌ لم أستطع استخراج video id")
             return
 
-        info = yt.get_song(video_id)
-
-        if not info:
-            bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
-            return
-
-        video = info.get("videoDetails", {})
+        try:
+            info = yt.get_song(video_id)
+            video = info.get("videoDetails",{})
+        except:
+            video = {}
 
         title = video.get("title")
         artist = video.get("author")
-        duration = int(video.get("lengthSeconds", 0))
+        duration = int(video.get("lengthSeconds",0))
 
         if not title:
-            bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
-            return
+
+            r = requests.get(f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}")
+            data = r.json()
+
+            title = data.get("title","Unknown")
+            artist = data.get("author_name","Unknown")
 
         bot.reply_to(
             message,
             f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات..."
         )
 
-        lyrics_ttml = get_lyrics(title, artist, duration)
+        lyrics_ttml = get_lyrics(title,artist,duration)
 
         if not lyrics_ttml:
-            bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
+            bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
             return
 
         lyrics = convert_ttml(lyrics_ttml)
 
-        with open("lyrics.txt", "w", encoding="utf-8") as f:
+        with open("lyrics.txt","w",encoding="utf-8") as f:
             f.write(lyrics)
 
-        with open("lyrics.txt", "rb") as f:
-            bot.send_document(message.chat.id, f)
+        with open("lyrics.txt","rb") as f:
+            bot.send_document(message.chat.id,f)
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
+
+        bot.send_message(message.chat.id,f"❌ خطأ:\n{str(e)}")
 
 
 bot.infinity_polling()
