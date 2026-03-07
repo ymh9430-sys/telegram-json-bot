@@ -28,18 +28,6 @@ def extract_video_id(url):
     return None
 
 
-def clean_title(title):
-
-    if not title:
-        return ""
-
-    title = re.sub(r"\(.*?\)", "", title)
-    title = re.sub(r"\[.*?\]", "", title)
-    title = re.sub(r"-.*", "", title)
-
-    return title.strip()
-
-
 def parse_time(t):
 
     if ":" in t:
@@ -130,50 +118,21 @@ def convert_agent(text):
     return "\n".join(result)
 
 
-def request_lyrics(title, artist=None, duration=None):
+def get_lyrics(title, artist, duration):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
-    params = {"s": title}
-
-    if artist:
-        params["a"] = artist
-
-    if duration:
-        params["d"] = duration
+    params = {
+        "s": title,
+        "a": artist,
+        "d": duration
+    }
 
     r = requests.get(url, params=params)
 
     if r.status_code == 200:
-
         data = r.json()
-
-        if data and data.get("ttml"):
-            return data["ttml"]
-
-    return None
-
-
-def get_lyrics(title, artist, duration):
-
-    title_clean = clean_title(title)
-
-    attempts = [
-
-        (title, artist, duration),
-        (title_clean, artist, duration),
-        (title_clean, artist, None),
-        (title_clean, None, None),
-        (title, None, None)
-
-    ]
-
-    for t, a, d in attempts:
-
-        lyrics = request_lyrics(t, a, d)
-
-        if lyrics:
-            return lyrics
+        return data.get("ttml")
 
     return None
 
@@ -206,25 +165,13 @@ def handle(message):
                 bot.reply_to(message, "❌ لم أستطع استخراج video id")
                 return
 
-            info = yt.get_song(video_id)
+            watch = yt.get_watch_playlist(video_id)
 
-            if not info:
-                bot.reply_to(message, "❌ لم أستطع جلب معلومات الأغنية")
-                return
+            track = watch["tracks"][0]
 
-            video = info.get("videoDetails")
-
-            if not video:
-                bot.reply_to(message, "❌ لم أستطع قراءة بيانات الفيديو")
-                return
-
-            title = video.get("title") or ""
-            artist = video.get("author") or ""
-            duration = int(video.get("lengthSeconds") or 0)
-
-            if not title:
-                bot.reply_to(message, "❌ لم أستطع استخراج اسم الأغنية")
-                return
+            title = track["title"]
+            artist = track["artists"][0]["name"]
+            duration = track["lengthSeconds"]
 
             bot.reply_to(
                 message,
