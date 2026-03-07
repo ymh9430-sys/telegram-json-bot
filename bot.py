@@ -1,7 +1,6 @@
 import telebot
 import requests
 from ytmusicapi import YTMusic
-from pytube import YouTube
 import re
 import xml.etree.ElementTree as ET
 
@@ -16,9 +15,8 @@ def extract_video_id(url):
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
         r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})"
+        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
     ]
 
     for p in patterns:
@@ -85,56 +83,24 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-def convert_agent(text):
+def get_song_info(video_id):
 
-    lines = text.split("\n")
+    watch = yt.get_watch_playlist(video_id)
 
-    result = []
-    base_time = None
+    track = watch["tracks"][0]
 
-    for line in lines:
+    title = track.get("title")
+    artist = track.get("artists", [{}])[0].get("name")
 
-        if line.startswith("["):
-            base_time = re.findall(r"\[(.*?)\]", line)[0]
-
-        if line.startswith("<"):
-
-            words = line.strip("<>").split("|")
-
-            line_result = f"[{base_time}] "
-            parts = []
-
-            for w in words:
-
-                word, start, end = w.split(":")
-
-                b = format_time(float(start))
-                e = format_time(float(end))
-
-                parts.append(f"<{b}>{word}<{e}>")
-
-            line_result += " ".join(parts)
-            result.append(line_result)
-
-    return "\n".join(result)
-
-
-def get_song_metadata(title):
-
-    results = yt.search(title, filter="songs")
-
-    if not results:
-        return None, None
-
-    song = results[0]
-
-    artist = song["artists"][0]["name"]
+    duration = 0
+    if "duration_seconds" in track:
+        duration = track["duration_seconds"]
 
     album = None
-    if "album" in song:
-        album = song["album"]["name"]
+    if "album" in track:
+        album = track["album"]["name"]
 
-    return artist, album
+    return title, artist, album, duration
 
 
 def get_lyrics(title, artist, duration, album=None):
@@ -166,41 +132,15 @@ def handle(message):
 
     try:
 
-        # تحويل agent lyrics
-        if "{agent:" in text:
-
-            lyrics = convert_agent(text)
-
-            with open("lyrics.txt", "w", encoding="utf-8") as f:
-                f.write(lyrics)
-
-            with open("lyrics.txt", "rb") as f:
-                bot.send_document(message.chat.id, f)
-
-            return
-
-
-        # لو رابط يوتيوب
-        if "youtube" in text or "youtu.be" in text:
+        if "youtube" in text:
 
             video_id = extract_video_id(text)
 
             if not video_id:
-                bot.reply_to(message, "❌ لم أستطع استخراج video id")
+                bot.reply_to(message, "❌ لم أستطع استخراج الفيديو")
                 return
 
-            url = f"https://www.youtube.com/watch?v={video_id}"
-
-            yt_video = YouTube(url)
-
-            title = yt_video.title
-            duration = yt_video.length
-
-            artist, album = get_song_metadata(title)
-
-            if not artist:
-                bot.reply_to(message, "❌ لم أستطع تحديد الفنان")
-                return
+            title, artist, album, duration = get_song_info(video_id)
 
             bot.reply_to(
                 message,
