@@ -30,6 +30,9 @@ def extract_video_id(url):
 
 def clean_title(title):
 
+    if not title:
+        return ""
+
     title = re.sub(r"\(.*?\)", "", title)
     title = re.sub(r"\[.*?\]", "", title)
     title = re.sub(r"-.*", "", title)
@@ -205,11 +208,23 @@ def handle(message):
 
             info = yt.get_song(video_id)
 
-            video = info.get("videoDetails", {})
+            if not info:
+                bot.reply_to(message, "❌ لم أستطع جلب معلومات الأغنية")
+                return
 
-            title = video.get("title")
-            artist = video.get("author")
-            duration = int(video.get("lengthSeconds", 0))
+            video = info.get("videoDetails")
+
+            if not video:
+                bot.reply_to(message, "❌ لم أستطع قراءة بيانات الفيديو")
+                return
+
+            title = video.get("title") or ""
+            artist = video.get("author") or ""
+            duration = int(video.get("lengthSeconds") or 0)
+
+            if not title:
+                bot.reply_to(message, "❌ لم أستطع استخراج اسم الأغنية")
+                return
 
             bot.reply_to(
                 message,
