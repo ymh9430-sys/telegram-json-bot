@@ -16,9 +16,9 @@ def extract_video_id(url):
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/embed/([a-zA-Z0-9_-]{11})",
-        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
+        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
+        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
+        r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})"
     ]
 
     for p in patterns:
@@ -189,7 +189,7 @@ def handle(message):
                 bot.reply_to(message, "❌ لم أستطع استخراج video id")
                 return
 
-            url = f"https://youtube.com/watch?v={video_id}"
+            url = f"https://www.youtube.com/watch?v={video_id}"
 
             yt_video = YouTube(url)
 
