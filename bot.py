@@ -1,10 +1,11 @@
 import telebot
 import requests
 from ytmusicapi import YTMusic
+from pytube import YouTube
 import re
 import xml.etree.ElementTree as ET
 
-BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
+BOT_TOKEN = "PUT_YOUR_BOT_TOKEN"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
@@ -118,7 +119,25 @@ def convert_agent(text):
     return "\n".join(result)
 
 
-def get_lyrics(title, artist, duration):
+def get_song_metadata(title):
+
+    results = yt.search(title, filter="songs")
+
+    if not results:
+        return None, None
+
+    song = results[0]
+
+    artist = song["artists"][0]["name"]
+
+    album = None
+    if "album" in song:
+        album = song["album"]["name"]
+
+    return artist, album
+
+
+def get_lyrics(title, artist, duration, album=None):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
@@ -127,6 +146,9 @@ def get_lyrics(title, artist, duration):
         "a": artist,
         "d": duration
     }
+
+    if album:
+        params["al"] = album
 
     r = requests.get(url, params=params)
 
@@ -137,23 +159,6 @@ def get_lyrics(title, artist, duration):
     return None
 
 
-def get_duration(track):
-
-    if "lengthSeconds" in track:
-        return int(track["lengthSeconds"])
-
-    if "duration_seconds" in track:
-        return int(track["duration_seconds"])
-
-    if "duration" in track:
-        d = track["duration"]
-        if ":" in d:
-            m, s = d.split(":")
-            return int(m) * 60 + int(s)
-
-    return 0
-
-
 @bot.message_handler(func=lambda m: True)
 def handle(message):
 
@@ -161,6 +166,7 @@ def handle(message):
 
     try:
 
+        # تحويل agent lyrics
         if "{agent:" in text:
 
             lyrics = convert_agent(text)
@@ -174,6 +180,7 @@ def handle(message):
             return
 
 
+        # لو رابط يوتيوب
         if "youtube" in text or "youtu.be" in text:
 
             video_id = extract_video_id(text)
@@ -182,21 +189,25 @@ def handle(message):
                 bot.reply_to(message, "❌ لم أستطع استخراج video id")
                 return
 
-            watch = yt.get_watch_playlist(video_id)
+            url = f"https://youtube.com/watch?v={video_id}"
 
-            track = watch["tracks"][0]
+            yt_video = YouTube(url)
 
-            title = track.get("title", "Unknown")
-            artist = track.get("artists", [{}])[0].get("name", "Unknown")
+            title = yt_video.title
+            duration = yt_video.length
 
-            duration = get_duration(track)
+            artist, album = get_song_metadata(title)
+
+            if not artist:
+                bot.reply_to(message, "❌ لم أستطع تحديد الفنان")
+                return
 
             bot.reply_to(
                 message,
-                f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات..."
+                f"🎵 {title}\n👤 {artist}\n💿 {album if album else 'Unknown'}\n\nجاري البحث عن الكلمات..."
             )
 
-            lyrics_ttml = get_lyrics(title, artist, duration)
+            lyrics_ttml = get_lyrics(title, artist, duration, album)
 
             if not lyrics_ttml:
                 bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
