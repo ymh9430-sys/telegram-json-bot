@@ -10,13 +10,15 @@ bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
 
+# استخراج ID من أي رابط يوتيوب
 def extract_video_id(url):
 
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
+        r"youtube\.com/shorts/([a-zA-Z0-9_-]{11})",
         r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})",
+        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
     ]
 
     for p in patterns:
@@ -27,6 +29,17 @@ def extract_video_id(url):
     return None
 
 
+# تنظيف اسم الأغنية
+def clean_title(title):
+
+    title = re.sub(r"\(.*?\)", "", title)
+    title = re.sub(r"\[.*?\]", "", title)
+    title = re.sub(r"-.*", "", title)
+
+    return title.strip()
+
+
+# تحويل وقت
 def parse_time(t):
 
     if ":" in t:
@@ -44,6 +57,7 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
+# تحويل TTML
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
@@ -53,36 +67,36 @@ def convert_ttml(ttml):
 
     for p in root.findall(".//tt:p", ns):
 
-        line_begin = p.attrib.get("begin")
+        begin = p.attrib.get("begin")
 
-        if not line_begin:
+        if not begin:
             continue
 
-        line_time = format_time(parse_time(line_begin))
-        line = f"[{line_time}]"
+        line = f"[{format_time(parse_time(begin))}]"
 
         words = []
 
         for span in p.findall("tt:span", ns):
 
-            begin = span.attrib.get("begin")
-            end = span.attrib.get("end")
-            word = span.text
+            b = span.attrib.get("begin")
+            e = span.attrib.get("end")
+            w = span.text
 
-            if not begin or not end or not word:
+            if not b or not e or not w:
                 continue
 
-            b = format_time(parse_time(begin))
-            e = format_time(parse_time(end))
-
-            words.append(f"<{b}>{word}<{e}>")
+            words.append(
+                f"<{format_time(parse_time(b))}>{w}<{format_time(parse_time(e))}>"
+            )
 
         line += " " + " ".join(words)
+
         result.append(line)
 
     return "\n".join(result)
 
 
+# استخراج بيانات الأغنية
 def get_song_info(video_id):
 
     watch = yt.get_watch_playlist(video_id)
@@ -92,9 +106,7 @@ def get_song_info(video_id):
     title = track.get("title")
     artist = track.get("artists", [{}])[0].get("name")
 
-    duration = 0
-    if "duration_seconds" in track:
-        duration = track["duration_seconds"]
+    duration = track.get("duration_seconds", 0)
 
     album = None
     if "album" in track:
@@ -103,24 +115,45 @@ def get_song_info(video_id):
     return title, artist, album, duration
 
 
-def get_lyrics(title, artist, duration, album=None):
+# طلب الكلمات
+def request_lyrics(params):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
-    params = {
-        "s": title,
-        "a": artist,
-        "d": duration
-    }
-
-    if album:
-        params["al"] = album
-
     r = requests.get(url, params=params)
 
+    print("REQUEST:", r.url)
+
     if r.status_code == 200:
+
         data = r.json()
-        return data.get("ttml")
+
+        if data and data.get("ttml"):
+            return data["ttml"]
+
+    return None
+
+
+# جلب الكلمات مع عدة محاولات
+def get_lyrics(title, artist, duration, album):
+
+    attempts = [
+
+        {"s": title, "a": artist, "d": duration, "al": album},
+        {"s": title, "a": artist, "d": duration},
+        {"s": title, "a": artist},
+        {"s": title}
+
+    ]
+
+    for params in attempts:
+
+        params = {k: v for k, v in params.items() if v}
+
+        lyrics = request_lyrics(params)
+
+        if lyrics:
+            return lyrics
 
     return None
 
@@ -132,36 +165,44 @@ def handle(message):
 
     try:
 
-        if "youtube" in text:
+        if "youtu" not in text:
 
-            video_id = extract_video_id(text)
+            bot.reply_to(message, "❌ أرسل رابط يوتيوب")
+            return
 
-            if not video_id:
-                bot.reply_to(message, "❌ لم أستطع استخراج الفيديو")
-                return
+        video_id = extract_video_id(text)
 
-            title, artist, album, duration = get_song_info(video_id)
+        if not video_id:
 
-            bot.reply_to(
-                message,
-                f"🎵 {title}\n👤 {artist}\n💿 {album if album else 'Unknown'}\n\nجاري البحث عن الكلمات..."
-            )
+            bot.reply_to(message, "❌ لم أستطع استخراج ID")
+            return
 
-            lyrics_ttml = get_lyrics(title, artist, duration, album)
+        title, artist, album, duration = get_song_info(video_id)
 
-            if not lyrics_ttml:
-                bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
-                return
+        title = clean_title(title)
 
-            lyrics = convert_ttml(lyrics_ttml)
+        bot.reply_to(
+            message,
+            f"🎵 {title}\n👤 {artist}\n💿 {album if album else 'Unknown'}\n\nجاري البحث عن الكلمات..."
+        )
 
-            with open("lyrics.txt", "w", encoding="utf-8") as f:
-                f.write(lyrics)
+        ttml = get_lyrics(title, artist, duration, album)
 
-            with open("lyrics.txt", "rb") as f:
-                bot.send_document(message.chat.id, f)
+        if not ttml:
+
+            bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
+            return
+
+        lyrics = convert_ttml(ttml)
+
+        with open("lyrics.lrc", "w", encoding="utf-8") as f:
+            f.write(lyrics)
+
+        with open("lyrics.lrc", "rb") as f:
+            bot.send_document(message.chat.id, f)
 
     except Exception as e:
+
         bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
 
 
