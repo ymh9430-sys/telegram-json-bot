@@ -9,7 +9,7 @@ BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
-# استخراج video id من كل روابط يوتيوب
+
 def extract_video_id(url):
 
     patterns = [
@@ -26,6 +26,15 @@ def extract_video_id(url):
             return m.group(1)
 
     return None
+
+
+def clean_title(title):
+
+    title = re.sub(r"\(.*?\)", "", title)
+    title = re.sub(r"\[.*?\]", "", title)
+    title = re.sub(r"-.*", "", title)
+
+    return title.strip()
 
 
 def parse_time(t):
@@ -45,7 +54,6 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
-# تحويل TTML إلى تنسيق الكلمات
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
@@ -85,7 +93,6 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-# تحويل صيغة agent إلى الصيغة القديمة
 def convert_agent(text):
 
     lines = text.split("\n")
@@ -120,21 +127,50 @@ def convert_agent(text):
     return "\n".join(result)
 
 
-def get_lyrics(title, artist, duration=0):
+def request_lyrics(title, artist=None, duration=None):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
-    params = {
-        "s": title,
-        "a": artist,
-        "d": duration
-    }
+    params = {"s": title}
+
+    if artist:
+        params["a"] = artist
+
+    if duration:
+        params["d"] = duration
 
     r = requests.get(url, params=params)
 
     if r.status_code == 200:
+
         data = r.json()
-        return data.get("ttml")
+
+        if data and data.get("ttml"):
+            return data["ttml"]
+
+    return None
+
+
+def get_lyrics(title, artist, duration):
+
+    title_clean = clean_title(title)
+
+    attempts = [
+
+        (title, artist, duration),
+        (title_clean, artist, duration),
+        (title_clean, artist, None),
+        (title_clean, None, None),
+        (title, None, None)
+
+    ]
+
+    for t, a, d in attempts:
+
+        lyrics = request_lyrics(t, a, d)
+
+        if lyrics:
+            return lyrics
 
     return None
 
@@ -146,7 +182,6 @@ def handle(message):
 
     try:
 
-        # لو أرسل كلمات agent
         if "{agent:" in text:
 
             lyrics = convert_agent(text)
@@ -160,7 +195,6 @@ def handle(message):
             return
 
 
-        # لو أرسل رابط يوتيوب
         if "youtube" in text or "youtu.be" in text:
 
             video_id = extract_video_id(text)
@@ -170,10 +204,6 @@ def handle(message):
                 return
 
             info = yt.get_song(video_id)
-
-            if not info:
-                bot.reply_to(message, "❌ لم استطع جلب معلومات الفيديو")
-                return
 
             video = info.get("videoDetails", {})
 
