@@ -137,6 +137,23 @@ def get_lyrics(title, artist, duration):
     return None
 
 
+def get_duration(track):
+
+    if "lengthSeconds" in track:
+        return int(track["lengthSeconds"])
+
+    if "duration_seconds" in track:
+        return int(track["duration_seconds"])
+
+    if "duration" in track:
+        d = track["duration"]
+        if ":" in d:
+            m, s = d.split(":")
+            return int(m) * 60 + int(s)
+
+    return 0
+
+
 @bot.message_handler(func=lambda m: True)
 def handle(message):
 
@@ -169,9 +186,10 @@ def handle(message):
 
             track = watch["tracks"][0]
 
-            title = track["title"]
-            artist = track["artists"][0]["name"]
-            duration = track["lengthSeconds"]
+            title = track.get("title", "Unknown")
+            artist = track.get("artists", [{}])[0].get("name", "Unknown")
+
+            duration = get_duration(track)
 
             bot.reply_to(
                 message,
