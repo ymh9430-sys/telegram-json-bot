@@ -11,31 +11,34 @@ bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
 
+# استخراج video id من أي لينك
 def extract_video_id(url):
 
-    parsed = urlparse(url)
+    try:
 
-    if "youtu.be" in parsed.netloc:
-        return parsed.path.replace("/", "")
+        parsed = urlparse(url)
 
-    qs = parse_qs(parsed.query)
+        if "youtu.be" in parsed.netloc:
+            return parsed.path.replace("/", "")
 
-    if "v" in qs:
-        return qs["v"][0]
+        if "youtube.com" in parsed.netloc or "music.youtube.com" in parsed.netloc:
+            qs = parse_qs(parsed.query)
+            return qs.get("v", [None])[0]
+
+    except:
+        pass
 
     return None
 
 
-def clean_text(text):
+def clean_artist(name):
 
-    if not text:
+    if not name:
         return ""
 
-    text = text.replace("- Topic","")
-    text = re.sub(r"\(.*?\)", "", text)
-    text = re.sub(r"\[.*?\]", "", text)
-
-    return text.strip()
+    name = name.replace("- Topic", "")
+    name = name.replace("VEVO", "")
+    return name.strip()
 
 
 def parse_time(t):
@@ -73,6 +76,7 @@ def convert_ttml(ttml):
 
         sec = parse_time(begin)
 
+        # منع اختفاء السطور المتشابهة
         while round(sec,3) in used_times:
             sec += 0.001
 
@@ -108,9 +112,33 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-def try_get(url, params):
+def get_lyrics(title, artist, duration=0):
+
+    url = "https://lyrics-api.boidu.dev/getLyrics"
+
+    params = {
+        "s": title,
+        "a": artist,
+        "d": duration
+    }
 
     try:
+
+        r = requests.get(url, params=params, timeout=10)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            if data.get("ttml"):
+                return data.get("ttml")
+
+    except:
+        pass
+
+    # محاولة ثانية بدون الفنان
+    try:
+
+        params = {"s": title}
 
         r = requests.get(url, params=params, timeout=10)
 
@@ -119,33 +147,7 @@ def try_get(url, params):
             return data.get("ttml")
 
     except:
-        return None
-
-    return None
-
-
-def get_lyrics(title, artist, duration, album):
-
-    base = "https://lyrics-api.boidu.dev/ttml/getLyrics"
-
-    attempts = [
-
-        {"s":title,"a":artist,"d":duration,"al":album},
-
-        {"s":title,"a":artist,"d":duration},
-
-        {"s":title,"a":artist},
-
-        {"s":title}
-
-    ]
-
-    for params in attempts:
-
-        lyrics = try_get(base,params)
-
-        if lyrics:
-            return lyrics
+        pass
 
     return None
 
@@ -160,30 +162,43 @@ def handle(message):
         video_id = extract_video_id(link)
 
         if not video_id:
-            bot.reply_to(message,"❌ رابط غير صالح")
+            bot.reply_to(message,"❌ لم أستطع استخراج video id")
             return
 
-        info = yt.get_song(video_id)
-
-        video = info.get("videoDetails",{})
-
-        title = clean_text(video.get("title"))
-        artist = clean_text(video.get("author"))
-        duration = int(video.get("lengthSeconds",0))
-
-        album = ""
+        title = None
+        artist = None
+        duration = 0
 
         try:
-            album = clean_text(info["microformat"]["microformatDataRenderer"]["category"])
+
+            info = yt.get_song(video_id)
+            video = info.get("videoDetails",{})
+
+            title = video.get("title")
+            artist = clean_artist(video.get("author"))
+            duration = int(video.get("lengthSeconds",0))
+
         except:
             pass
+
+        # fallback لو ytmusicapi فشل
+        if not title:
+
+            r = requests.get(
+                f"https://noembed.com/embed?url=https://www.youtube.com/watch?v={video_id}"
+            )
+
+            data = r.json()
+
+            title = data.get("title","Unknown")
+            artist = clean_artist(data.get("author_name","Unknown"))
 
         bot.reply_to(
             message,
             f"🎵 {title}\n👤 {artist}\n\nجاري البحث عن الكلمات..."
         )
 
-        lyrics_ttml = get_lyrics(title,artist,duration,album)
+        lyrics_ttml = get_lyrics(title,artist,duration)
 
         if not lyrics_ttml:
             bot.send_message(message.chat.id,"❌ لم يتم العثور على كلمات")
