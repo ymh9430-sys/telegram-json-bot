@@ -92,8 +92,11 @@ def convert_ttml(ttml):
 
     for p in root.findall(".//tt:p", ns):
 
-        main = []
-        bg = []
+        main_line = ""
+        bg_line = ""
+
+        main_time = None
+        bg_time = None
 
         spans = p.findall(".//tt:span", ns)
 
@@ -103,59 +106,44 @@ def convert_ttml(ttml):
             if not text:
                 continue
 
-            b = span.attrib.get("begin")
-            e = span.attrib.get("end")
+            b = format_time(parse_time(span.attrib.get("begin")))
+            e = format_time(parse_time(span.attrib.get("end")))
 
-            b = format_time(parse_time(b))
-            e = format_time(parse_time(e))
+            piece = f"<{b}>{text}<{e}>"
 
-            segment = f"<{b}>{text}<{e}>"
+            tail = span.tail
 
-            parent = span.getparent() if hasattr(span, "getparent") else None
+            is_bg = "(" in text or ")" in text
 
-            role = span.attrib.get('{http://www.w3.org/ns/ttml#metadata}role')
+            if is_bg:
 
-            if role == "x-bg" or "(" in text or ")" in text:
-                bg.append((b, segment))
+                if not bg_time:
+                    bg_time = b
+
+                bg_line += piece
+
+                if tail and tail.strip() == "":
+                    bg_line += " "
+
             else:
-                main.append((b, segment))
 
-        if main:
+                if not main_time:
+                    main_time = b
 
-            line = ""
+                main_line += piece
 
-            for i, (b, seg) in enumerate(main):
+                if tail and tail.strip() == "":
+                    main_line += " "
 
-                if i == 0:
-                    first = b
+        if main_line:
+            result.append(f"[{main_time}]{main_line}")
 
-                line += seg
-
-                if i < len(main) - 1:
-                    line += " "
-
-            result.append(f"[{first}]" + line)
-
-        if bg:
-
-            line = ""
-
-            for i, (b, seg) in enumerate(bg):
-
-                if i == 0:
-                    first = b
-
-                line += seg
-
-                if i < len(bg) - 1:
-                    line += " "
-
-            result.append(f"[{first}]" + line)
+        if bg_line:
+            result.append(f"[{bg_time}]{bg_line}")
 
     result = avoid_duplicate_time(result)
 
     return "\n".join(result)
-
 
 def convert_manual(text):
 
