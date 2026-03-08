@@ -10,7 +10,6 @@ bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
 
-# استخراج ID من أي رابط يوتيوب
 def extract_video_id(url):
 
     patterns = [
@@ -29,7 +28,6 @@ def extract_video_id(url):
     return None
 
 
-# تنظيف اسم الأغنية
 def clean_title(title):
 
     title = re.sub(r"\(.*?\)", "", title)
@@ -39,7 +37,6 @@ def clean_title(title):
     return title.strip()
 
 
-# تحويل وقت
 def parse_time(t):
 
     if ":" in t:
@@ -57,7 +54,6 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
-# تحويل TTML
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
@@ -67,16 +63,15 @@ def convert_ttml(ttml):
 
     for p in root.findall(".//tt:p", ns):
 
-        begin = p.attrib.get("begin")
+        spans = p.findall(".//tt:span", ns)
 
-        if not begin:
+        if not spans:
             continue
 
-        line = f"[{format_time(parse_time(begin))}]"
+        main_words = []
+        bg_words = []
 
-        words = []
-
-        for span in p.findall("tt:span", ns):
+        for span in spans:
 
             b = span.attrib.get("begin")
             e = span.attrib.get("end")
@@ -85,18 +80,85 @@ def convert_ttml(ttml):
             if not b or not e or not w:
                 continue
 
-            words.append(
-                f"<{format_time(parse_time(b))}>{w}<{format_time(parse_time(e))}>"
-            )
+            word = {
+                "begin": format_time(parse_time(b)),
+                "end": format_time(parse_time(e)),
+                "text": w.strip()
+            }
 
-        line += " " + " ".join(words)
+            role = span.attrib.get("ttm:role")
 
-        result.append(line)
+            if role == "x-bg":
+                bg_words.append(word)
+            else:
+                main_words.append(word)
+
+        def merge_words(words):
+
+            merged = []
+            last = None
+
+            for w in words:
+
+                if last and last["end"] == w["begin"]:
+                    last["text"] += w["text"]
+                    last["end"] = w["end"]
+                else:
+                    merged.append(w)
+                    last = w
+
+            return merged
+
+        main_words = merge_words(main_words)
+        bg_words = merge_words(bg_words)
+
+        if main_words:
+
+            line = f"[{main_words[0]['begin']}]"
+
+            for w in main_words:
+                line += f"<{w['begin']}>{w['text']}<{w['end']}> "
+
+            result.append(line.strip())
+
+        if bg_words:
+
+            line = f"[{bg_words[0]['begin']}]"
+
+            for w in bg_words:
+                line += f"<{w['begin']}>{w['text']}<{w['end']}> "
+
+            result.append(line.strip())
 
     return "\n".join(result)
 
 
-# استخراج بيانات الأغنية
+def convert_manual(text):
+
+    lines = text.splitlines()
+    result = []
+
+    for line in lines:
+
+        if line.startswith("<"):
+
+            parts = line.strip("<>").split("|")
+
+            for p in parts:
+
+                try:
+                    word, start, end = p.split(":")
+                except:
+                    continue
+
+                start = format_time(float(start))
+                end = format_time(float(end))
+
+                result.append(f"<{start}>{word}<{end}>")
+
+    return "\n".join(result)
+
+
 def get_song_info(video_id):
 
     watch = yt.get_watch_playlist(video_id)
@@ -115,7 +177,6 @@ def get_song_info(video_id):
     return title, artist, album, duration
 
 
-# طلب الكلمات
 def request_lyrics(params):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
@@ -134,7 +195,6 @@ def request_lyrics(params):
     return None
 
 
-# جلب الكلمات مع عدة محاولات
 def get_lyrics(title, artist, duration, album):
 
     attempts = [
@@ -164,6 +224,18 @@ def handle(message):
     text = message.text.strip()
 
     try:
+
+        if text.startswith("[") and "<" in text:
+
+            lyrics = convert_manual(text)
+
+            with open("lyrics.lrc", "w", encoding="utf-8") as f:
+                f.write(lyrics)
+
+            with open("lyrics.lrc", "rb") as f:
+                bot.send_document(message.chat.id, f)
+
+            return
 
         if "youtu" not in text:
 
