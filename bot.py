@@ -68,8 +68,7 @@ def convert_ttml(ttml):
         if not spans:
             continue
 
-        main_words = []
-        bg_words = []
+        words = []
 
         for span in spans:
 
@@ -80,18 +79,32 @@ def convert_ttml(ttml):
             if not b or not e or not w:
                 continue
 
-            word = {
+            words.append({
                 "begin": format_time(parse_time(b)),
                 "end": format_time(parse_time(e)),
                 "text": w.strip()
-            }
+            })
 
-            role = span.attrib.get("ttm:role")
+        if not words:
+            continue
 
-            if role == "x-bg":
-                bg_words.append(word)
-            else:
-                main_words.append(word)
+        line = f"[{words[0]['begin']}]"
+
+        for i, w in enumerate(words):
+
+            line += f"<{w['begin']}>{w['text']}<{w['end']}>"
+
+            if i < len(words) - 1:
+
+                next_word = words[i+1]
+
+                # لو الكلمة مقسومة لا نضع مسافة
+                if w["end"] != next_word["begin"]:
+                    line += " "
+
+        result.append(line)
+
+    return "\n".join(result)
 
         def merge_words(words):
 
