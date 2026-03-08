@@ -86,7 +86,11 @@ def avoid_duplicate_time(lines):
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
-    ns = {'tt': 'http://www.w3.org/ns/ttml'}
+
+    ns = {
+        'tt': 'http://www.w3.org/ns/ttml',
+        'ttm': 'http://www.w3.org/ns/ttml#metadata'
+    }
 
     result = []
 
@@ -98,40 +102,51 @@ def convert_ttml(ttml):
         main_time = None
         bg_time = None
 
-        spans = p.findall(".//tt:span", ns)
+        for span in p:
 
-        for span in spans:
-
-            text = span.text
-            if not text:
+            tag = span.tag.split("}")[-1]
+            if tag != "span":
                 continue
 
-            b = format_time(parse_time(span.attrib.get("begin")))
-            e = format_time(parse_time(span.attrib.get("end")))
+            role = span.attrib.get('{http://www.w3.org/ns/ttml#metadata}role')
 
-            piece = f"<{b}>{text}<{e}>"
+            # background lyrics
+            if role == "x-bg":
 
-            tail = span.tail
+                for sub in span.findall("tt:span", ns):
 
-            is_bg = "(" in text or ")" in text
+                    text = sub.text
+                    if not text:
+                        continue
 
-            if is_bg:
+                    b = format_time(parse_time(sub.attrib.get("begin")))
+                    e = format_time(parse_time(sub.attrib.get("end")))
 
-                if not bg_time:
-                    bg_time = b
+                    if not bg_time:
+                        bg_time = b
 
-                bg_line += piece
+                    bg_line += f"<{b}>{text}<{e}>"
 
-                if tail and tail.strip() == "":
-                    bg_line += " "
+                    tail = sub.tail
+                    if tail and tail.strip() == "":
+                        bg_line += " "
 
+            # main lyrics
             else:
+
+                text = span.text
+                if not text:
+                    continue
+
+                b = format_time(parse_time(span.attrib.get("begin")))
+                e = format_time(parse_time(span.attrib.get("end")))
 
                 if not main_time:
                     main_time = b
 
-                main_line += piece
+                main_line += f"<{b}>{text}<{e}>"
 
+                tail = span.tail
                 if tail and tail.strip() == "":
                     main_line += " "
 
@@ -144,7 +159,6 @@ def convert_ttml(ttml):
     result = avoid_duplicate_time(result)
 
     return "\n".join(result)
-
 def convert_manual(text):
 
     lines = text.splitlines()
