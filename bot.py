@@ -55,48 +55,145 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
+def avoid_duplicate_time(lines):
+
+    used = set()
+    fixed = []
+
+    for line in lines:
+
+        m = re.match(r"\[(.*?)\]", line)
+
+        if not m:
+            fixed.append(line)
+            continue
+
+        t = m.group(1)
+
+        while t in used:
+            sec = parse_time(t) + 0.001
+            t = format_time(sec)
+
+        used.add(t)
+
+        line = re.sub(r"\[.*?\]", f"[{t}]", line, 1)
+
+        fixed.append(line)
+
+    return fixed
+
+
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
-
     ns = {'tt': 'http://www.w3.org/ns/ttml'}
 
     result = []
 
     for p in root.findall(".//tt:p", ns):
 
+        main = []
+        bg = []
+
         spans = p.findall(".//tt:span", ns)
-
-        if not spans:
-            continue
-
-        line = ""
-        first_time = None
 
         for span in spans:
 
+            text = span.text
+            if not text:
+                continue
+
             b = span.attrib.get("begin")
             e = span.attrib.get("end")
-            w = span.text
-
-            if not w:
-                continue
 
             b = format_time(parse_time(b))
             e = format_time(parse_time(e))
 
+            segment = f"<{b}>{text}<{e}>"
+
+            parent = span.getparent() if hasattr(span, "getparent") else None
+
+            role = span.attrib.get('{http://www.w3.org/ns/ttml#metadata}role')
+
+            if role == "x-bg" or "(" in text or ")" in text:
+                bg.append((b, segment))
+            else:
+                main.append((b, segment))
+
+        if main:
+
+            line = ""
+
+            for i, (b, seg) in enumerate(main):
+
+                if i == 0:
+                    first = b
+
+                line += seg
+
+                if i < len(main) - 1:
+                    line += " "
+
+            result.append(f"[{first}]" + line)
+
+        if bg:
+
+            line = ""
+
+            for i, (b, seg) in enumerate(bg):
+
+                if i == 0:
+                    first = b
+
+                line += seg
+
+                if i < len(bg) - 1:
+                    line += " "
+
+            result.append(f"[{first}]" + line)
+
+    result = avoid_duplicate_time(result)
+
+    return "\n".join(result)
+
+
+def convert_manual(text):
+
+    lines = text.splitlines()
+    result = []
+
+    for line in lines:
+
+        if not line.strip():
+            continue
+
+        parts = line.split()
+
+        first_time = None
+        out = ""
+
+        for p in parts:
+
+            m = re.match(r"(.*?)\((.*?)\)", p)
+
+            if not m:
+                continue
+
+            word = m.group(1)
+            t = float(m.group(2))
+
+            b = format_time(t)
+            e = format_time(t + 0.5)
+
             if not first_time:
                 first_time = b
 
-            line += f"<{b}>{w}<{e}>"
+            out += f"<{b}>{word}<{e}> "
 
-            tail = span.tail
+        if out:
+            result.append(f"[{first_time}]" + out.strip())
 
-            if tail and tail.strip() == "":
-                line += " "
-
-        if line and first_time:
-            result.append(f"[{first_time}]" + line)
+    result = avoid_duplicate_time(result)
 
     return "\n".join(result)
 
@@ -124,8 +221,6 @@ def request_lyrics(params):
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
     r = requests.get(url, params=params)
-
-    print("REQUEST:", r.url)
 
     if r.status_code == 200:
 
@@ -166,6 +261,18 @@ def handle(message):
     text = message.text.strip()
 
     try:
+
+        if text.startswith("["):
+
+            lyrics = convert_manual(text)
+
+            with open("lyrics.txt", "w", encoding="utf-8") as f:
+                f.write(lyrics)
+
+            with open("lyrics.txt", "rb") as f:
+                bot.send_document(message.chat.id, f)
+
+            return
 
         if "youtu" not in text:
 
