@@ -88,60 +88,44 @@ def convert_ttml(ttml):
         if not words:
             continue
 
-        line = f"[{words[0]['begin']}]"
+        normal = []
+        background = []
 
-        for i, w in enumerate(words):
+        for w in words:
+            if "(" in w["text"] or ")" in w["text"]:
+                background.append(w)
+            else:
+                normal.append(w)
 
-            line += f"<{w['begin']}>{w['text']}<{w['end']}>"
+        def build_line(words):
 
-            if i < len(words) - 1:
+            if not words:
+                return None
 
-                next_word = words[i+1]
+            line = f"[{words[0]['begin']}]"
 
-                # لو الكلمة مقسومة لا نضع مسافة
-                if w["end"] != next_word["begin"]:
-                    line += " "
+            for i, w in enumerate(words):
 
-        result.append(line)
+                line += f"<{w['begin']}>{w['text']}<{w['end']}>"
 
-    return "\n".join(result)
+                if i < len(words) - 1:
 
-        def merge_words(words):
+                    next_word = words[i+1]
 
-            merged = []
-            last = None
+                    # لو الكلمة مجزأة لا نضع مسافة
+                    if w["end"] != next_word["begin"]:
+                        line += " "
 
-            for w in words:
+            return line
 
-                if last and last["end"] == w["begin"]:
-                    last["text"] += w["text"]
-                    last["end"] = w["end"]
-                else:
-                    merged.append(w)
-                    last = w
+        main_line = build_line(normal)
+        bg_line = build_line(background)
 
-            return merged
+        if main_line:
+            result.append(main_line)
 
-        main_words = merge_words(main_words)
-        bg_words = merge_words(bg_words)
-
-        if main_words:
-
-            line = f"[{main_words[0]['begin']}]"
-
-            for w in main_words:
-                line += f"<{w['begin']}>{w['text']}<{w['end']}> "
-
-            result.append(line.strip())
-
-        if bg_words:
-
-            line = f"[{bg_words[0]['begin']}]"
-
-            for w in bg_words:
-                line += f"<{w['begin']}>{w['text']}<{w['end']}> "
-
-            result.append(line.strip())
+        if bg_line:
+            result.append(bg_line)
 
     return "\n".join(result)
 
@@ -157,7 +141,9 @@ def convert_manual(text):
 
             parts = line.strip("<>").split("|")
 
-            for p in parts:
+            line_out = ""
+
+            for i, p in enumerate(parts):
 
                 try:
                     word, start, end = p.split(":")
@@ -167,7 +153,12 @@ def convert_manual(text):
                 start = format_time(float(start))
                 end = format_time(float(end))
 
-                result.append(f"<{start}>{word}<{end}>")
+                line_out += f"<{start}>{word}<{end}>"
+
+                if i < len(parts) - 1:
+                    line_out += " "
+
+            result.append(line_out)
 
     return "\n".join(result)
 
@@ -238,6 +229,7 @@ def handle(message):
 
     try:
 
+        # تحويل النص اليدوي
         if text.startswith("[") and "<" in text:
 
             lyrics = convert_manual(text)
