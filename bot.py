@@ -35,6 +35,8 @@ def clean_title(title):
 
 
 def parse_time(t):
+    if not t:
+        return 0
     if ":" in t:
         m, s = t.split(":")
         return int(m) * 60 + float(s)
@@ -47,7 +49,6 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
-# ⭐ هنا الإصلاح الحقيقي: قراءة span.tail
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
@@ -57,41 +58,52 @@ def convert_ttml(ttml):
 
     for p in root.findall(".//tt:p", ns):
 
+        p_begin = p.attrib.get("begin")
+        p_begin = format_time(parse_time(p_begin))
+
         spans = p.findall("tt:span", ns)
 
-        if not spans:
-            continue
-
         line = ""
-
         first_time = None
 
-        for span in spans:
+        if spans:
 
-            b = span.attrib.get("begin")
-            e = span.attrib.get("end")
-            w = span.text
+            for span in spans:
 
-            if not b or not e or not w:
-                continue
+                b = span.attrib.get("begin")
+                e = span.attrib.get("end")
+                w = span.text
 
-            b = format_time(parse_time(b))
-            e = format_time(parse_time(e))
+                if not w:
+                    continue
 
-            if not first_time:
-                first_time = b
+                if not b:
+                    b = p_begin
+                if not e:
+                    e = p_begin
 
-            line += f"<{b}>{w}<{e}>"
+                b = format_time(parse_time(b))
+                e = format_time(parse_time(e))
 
-            # قراءة المسافة الحقيقية بين span
-            tail = span.tail
+                if not first_time:
+                    first_time = b
 
-            if tail and tail.strip() == "":
-                line += " "
+                line += f"<{b}>{w}<{e}>"
 
-        if first_time:
-            line = f"[{first_time}]" + line
-            result.append(line)
+                tail = span.tail
+
+                if tail and tail.strip() == "":
+                    line += " "
+
+        else:
+
+            if p.text:
+                text = p.text.strip()
+                line = f"<{p_begin}>{text}<{p_begin}>"
+                first_time = p_begin
+
+        if line and first_time:
+            result.append(f"[{first_time}]" + line)
 
     return "\n".join(result)
 
@@ -193,7 +205,6 @@ def handle(message):
 
     try:
 
-        # تحويل النص اليدوي
         if text.startswith("[") and "<" in text:
 
             lyrics = convert_manual(text)
