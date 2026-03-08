@@ -11,7 +11,6 @@ yt = YTMusic()
 
 
 def extract_video_id(url):
-
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
@@ -29,31 +28,26 @@ def extract_video_id(url):
 
 
 def clean_title(title):
-
     title = re.sub(r"\(.*?\)", "", title)
     title = re.sub(r"\[.*?\]", "", title)
     title = re.sub(r"-.*", "", title)
-
     return title.strip()
 
 
 def parse_time(t):
-
     if ":" in t:
         m, s = t.split(":")
         return int(m) * 60 + float(s)
-
     return float(t)
 
 
 def format_time(sec):
-
     m = int(sec // 60)
     s = sec % 60
-
     return f"{m:02d}:{s:06.3f}"
 
 
+# ⭐ هنا الإصلاح الحقيقي: قراءة span.tail
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
@@ -63,12 +57,14 @@ def convert_ttml(ttml):
 
     for p in root.findall(".//tt:p", ns):
 
-        spans = p.findall(".//tt:span", ns)
+        spans = p.findall("tt:span", ns)
 
         if not spans:
             continue
 
-        words = []
+        line = ""
+
+        first_time = None
 
         for span in spans:
 
@@ -79,53 +75,23 @@ def convert_ttml(ttml):
             if not b or not e or not w:
                 continue
 
-            words.append({
-                "begin": format_time(parse_time(b)),
-                "end": format_time(parse_time(e)),
-                "text": w.strip()
-            })
+            b = format_time(parse_time(b))
+            e = format_time(parse_time(e))
 
-        if not words:
-            continue
+            if not first_time:
+                first_time = b
 
-        normal = []
-        background = []
+            line += f"<{b}>{w}<{e}>"
 
-        for w in words:
-            if "(" in w["text"] or ")" in w["text"]:
-                background.append(w)
-            else:
-                normal.append(w)
+            # قراءة المسافة الحقيقية بين span
+            tail = span.tail
 
-        def build_line(words):
+            if tail and tail.strip() == "":
+                line += " "
 
-            if not words:
-                return None
-
-            line = f"[{words[0]['begin']}]"
-
-            for i, w in enumerate(words):
-
-                line += f"<{w['begin']}>{w['text']}<{w['end']}>"
-
-                if i < len(words) - 1:
-
-                    next_word = words[i+1]
-
-                    # لو الكلمة مجزأة لا نضع مسافة
-                    if w["end"] != next_word["begin"]:
-                        line += " "
-
-            return line
-
-        main_line = build_line(normal)
-        bg_line = build_line(background)
-
-        if main_line:
-            result.append(main_line)
-
-        if bg_line:
-            result.append(bg_line)
+        if first_time:
+            line = f"[{first_time}]" + line
+            result.append(line)
 
     return "\n".join(result)
 
@@ -202,12 +168,10 @@ def request_lyrics(params):
 def get_lyrics(title, artist, duration, album):
 
     attempts = [
-
         {"s": title, "a": artist, "d": duration, "al": album},
         {"s": title, "a": artist, "d": duration},
         {"s": title, "a": artist},
         {"s": title}
-
     ]
 
     for params in attempts:
