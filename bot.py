@@ -4,7 +4,7 @@ from ytmusicapi import YTMusic
 import re
 import xml.etree.ElementTree as ET
 
-BOT_TOKEN = "PUT_YOUR_BOT_TOKEN"
+BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
