@@ -171,11 +171,13 @@ def get_song_data(track_id):
     artist = track["artistName"]
     album = track["collectionName"]
 
+    # تعديل single
+    if album and "single" in album.lower():
+        album = title
+
     duration = round(track["trackTimeMillis"] / 1000)
 
     return title, artist, album, duration
-
-
 # =========================
 # طلب الكلمات
 # =========================
