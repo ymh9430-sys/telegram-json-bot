@@ -154,12 +154,20 @@ def extract_track_id(url):
 # جلب بيانات الأغنية من Apple
 # =========================
 
+import requests
+import re
+
+def clean_title(title):
+    # حذف الأقواس لو فيها feat / from / with
+    title = re.sub(r"\s*\((?i:(feat\.?|from|with)[^)]*)\)", "", title).strip()
+    return title
+
+
 def get_song_data(track_id):
 
     url = f"https://itunes.apple.com/lookup?id={track_id}"
 
     r = requests.get(url)
-
     data = r.json()
 
     if data["resultCount"] == 0:
@@ -167,13 +175,16 @@ def get_song_data(track_id):
 
     track = data["results"][0]
 
-    title = clean_song_title(track["trackName"])
+    title = track["trackName"]
     artist = track["artistName"]
     album = track["collectionName"]
 
-    # إزالة كلمة Single
+    # تنظيف اسم الأغنية
+    title = clean_title(title)
+
+    # تعديل single
     if album and "single" in album.lower():
-        album = re.split(r"[-–]", album)[0].strip()
+        album = title
 
     duration = round(track["trackTimeMillis"] / 1000)
 
