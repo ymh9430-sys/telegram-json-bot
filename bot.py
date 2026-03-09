@@ -4,18 +4,22 @@ from ytmusicapi import YTMusic
 import re
 import xml.etree.ElementTree as ET
 
-BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
+BOT_TOKEN = "PUT_YOUR_BOT_TOKEN"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 yt = YTMusic()
 
+
+# ---------------------------
+# extract youtube video id
+# ---------------------------
 
 def extract_video_id(url):
 
     patterns = [
         r"v=([a-zA-Z0-9_-]{11})",
         r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
+        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
     ]
 
     for p in patterns:
@@ -26,6 +30,10 @@ def extract_video_id(url):
     return None
 
 
+# ---------------------------
+# clean title
+# ---------------------------
+
 def clean_title(title):
 
     title = re.sub(r"\(.*?\)", "", title)
@@ -34,6 +42,10 @@ def clean_title(title):
 
     return title.strip()
 
+
+# ---------------------------
+# time helpers
+# ---------------------------
 
 def parse_time(t):
 
@@ -54,6 +66,10 @@ def format_time(sec):
 
     return f"{m:02d}:{s:06.3f}"
 
+
+# ---------------------------
+# avoid duplicate timestamps
+# ---------------------------
 
 def avoid_duplicate_time(lines):
 
@@ -83,6 +99,10 @@ def avoid_duplicate_time(lines):
     return fixed
 
 
+# ---------------------------
+# convert ttml (لم يتم تعديله)
+# ---------------------------
+
 def convert_ttml(ttml):
 
     root = ET.fromstring(ttml)
@@ -110,7 +130,6 @@ def convert_ttml(ttml):
 
             role = span.attrib.get('{http://www.w3.org/ns/ttml#metadata}role')
 
-            # background lyrics
             if role == "x-bg":
 
                 for sub in span.findall("tt:span", ns):
@@ -131,7 +150,6 @@ def convert_ttml(ttml):
                     if tail and tail.strip() == "":
                         bg_line += " "
 
-            # main lyrics
             else:
 
                 text = span.text
@@ -159,46 +177,11 @@ def convert_ttml(ttml):
     result = avoid_duplicate_time(result)
 
     return "\n".join(result)
-def convert_manual(text):
 
-    lines = text.splitlines()
-    result = []
 
-    for line in lines:
-
-        if not line.strip():
-            continue
-
-        parts = line.split()
-
-        first_time = None
-        out = ""
-
-        for p in parts:
-
-            m = re.match(r"(.*?)\((.*?)\)", p)
-
-            if not m:
-                continue
-
-            word = m.group(1)
-            t = float(m.group(2))
-
-            b = format_time(t)
-            e = format_time(t + 0.5)
-
-            if not first_time:
-                first_time = b
-
-            out += f"<{b}>{word}<{e}> "
-
-        if out:
-            result.append(f"[{first_time}]" + out.strip())
-
-    result = avoid_duplicate_time(result)
-
-    return "\n".join(result)
-
+# ---------------------------
+# get song info youtube
+# ---------------------------
 
 def get_song_info(video_id):
 
@@ -217,6 +200,52 @@ def get_song_info(video_id):
 
     return title, artist, album, duration
 
+
+# ---------------------------
+# spotify parser
+# ---------------------------
+
+def get_spotify_info(url):
+
+    r = requests.get(url)
+    html = r.text
+
+    title = re.search(r'<meta property="og:title" content="(.*?)"', html)
+    artist = re.search(r'<meta name="music:musician_description" content="(.*?)"', html)
+
+    if title:
+        title = title.group(1)
+
+    if artist:
+        artist = artist.group(1)
+
+    return title, artist, None, None
+
+
+# ---------------------------
+# apple music parser
+# ---------------------------
+
+def get_apple_info(url):
+
+    r = requests.get(url)
+    html = r.text
+
+    title = re.search(r'<meta property="og:title" content="(.*?)"', html)
+    artist = re.search(r'<meta name="apple:title" content="(.*?)"', html)
+
+    if title:
+        title = title.group(1)
+
+    if artist:
+        artist = artist.group(1)
+
+    return title, artist, None, None
+
+
+# ---------------------------
+# lyrics api
+# ---------------------------
 
 def request_lyrics(params):
 
@@ -257,6 +286,10 @@ def get_lyrics(title, artist, duration, album):
     return None
 
 
+# ---------------------------
+# telegram handler
+# ---------------------------
+
 @bot.message_handler(func=lambda m: True)
 def handle(message):
 
@@ -264,31 +297,32 @@ def handle(message):
 
     try:
 
-        if text.startswith("["):
+        # youtube
+        if "youtu" in text:
 
-            lyrics = convert_manual(text)
+            video_id = extract_video_id(text)
 
-            with open("lyrics.txt", "w", encoding="utf-8") as f:
-                f.write(lyrics)
+            if not video_id:
+                bot.reply_to(message, "❌ لم أستطع استخراج ID")
+                return
 
-            with open("lyrics.txt", "rb") as f:
-                bot.send_document(message.chat.id, f)
+            title, artist, album, duration = get_song_info(video_id)
 
+        # spotify
+        elif "spotify.com" in text:
+
+            title, artist, album, duration = get_spotify_info(text)
+
+        # apple music
+        elif "music.apple.com" in text:
+
+            title, artist, album, duration = get_apple_info(text)
+
+        else:
+
+            bot.reply_to(message, "❌ أرسل رابط من YouTube أو Spotify أو Apple Music")
             return
 
-        if "youtu" not in text:
-
-            bot.reply_to(message, "❌ أرسل رابط يوتيوب")
-            return
-
-        video_id = extract_video_id(text)
-
-        if not video_id:
-
-            bot.reply_to(message, "❌ لم أستطع استخراج ID")
-            return
-
-        title, artist, album, duration = get_song_info(video_id)
 
         title = clean_title(title)
 
@@ -300,7 +334,6 @@ def handle(message):
         ttml = get_lyrics(title, artist, duration, album)
 
         if not ttml:
-
             bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
             return
 
