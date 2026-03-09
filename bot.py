@@ -56,7 +56,9 @@ def avoid_duplicate_time(lines):
     return fixed
 
 
-# convert_ttml بدون تعديل
+# =========================
+# convert_ttml (بدون أي تعديل)
+# =========================
 
 def convert_ttml(ttml):
 
@@ -101,6 +103,10 @@ def convert_ttml(ttml):
 
                     bg_line += f"<{b}>{text}<{e}>"
 
+                    tail = sub.tail
+                    if tail and tail.strip() == "":
+                        bg_line += " "
+
             else:
 
                 text = span.text
@@ -115,6 +121,10 @@ def convert_ttml(ttml):
 
                 main_line += f"<{b}>{text}<{e}>"
 
+                tail = span.tail
+                if tail and tail.strip() == "":
+                    main_line += " "
+
         if main_line:
             result.append(f"[{main_time}]{main_line}")
 
@@ -126,7 +136,9 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-# استخراج track id من رابط apple music
+# =========================
+# استخراج track id من رابط Apple Music
+# =========================
 
 def extract_track_id(url):
 
@@ -138,7 +150,9 @@ def extract_track_id(url):
     return None
 
 
-# جلب بيانات الأغنية من apple api
+# =========================
+# جلب بيانات الأغنية من Apple
+# =========================
 
 def get_song_data(track_id):
 
@@ -162,7 +176,9 @@ def get_song_data(track_id):
     return title, artist, album, duration
 
 
+# =========================
 # طلب الكلمات
+# =========================
 
 def request_lyrics(title, artist, album, duration):
 
@@ -176,6 +192,9 @@ def request_lyrics(title, artist, album, duration):
     }
 
     r = requests.get(url, params=params)
+
+    if r.status_code != 200:
+        return None
 
     data = r.json()
 
@@ -191,6 +210,10 @@ def request_lyrics(title, artist, album, duration):
     return None
 
 
+# =========================
+# telegram handler
+# =========================
+
 @bot.message_handler(func=lambda m: True)
 def handle(message):
 
@@ -202,7 +225,7 @@ def handle(message):
 
         if not track_id:
 
-            bot.reply_to(message, "❌ رابط Apple Music غير صالح")
+            bot.reply_to(message, "❌ أرسل رابط Apple Music صحيح")
             return
 
         title, artist, album, duration = get_song_data(track_id)
@@ -237,7 +260,7 @@ def handle(message):
 
     except Exception as e:
 
-        bot.send_message(message.chat.id, f"❌ خطأ:\n{e}")
+        bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
 
 
 bot.infinity_polling()
