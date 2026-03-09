@@ -1,38 +1,12 @@
 import telebot
 import requests
-from ytmusicapi import YTMusic
 import re
 import xml.etree.ElementTree as ET
 
 BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 bot = telebot.TeleBot(BOT_TOKEN)
-yt = YTMusic()
 
-
-# ---------------------------
-# extract youtube video id
-# ---------------------------
-
-def extract_video_id(url):
-
-    patterns = [
-        r"v=([a-zA-Z0-9_-]{11})",
-        r"youtu\.be/([a-zA-Z0-9_-]{11})",
-        r"music\.youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})"
-    ]
-
-    for p in patterns:
-        m = re.search(p, url)
-        if m:
-            return m.group(1)
-
-    return None
-
-
-# ---------------------------
-# clean title
-# ---------------------------
 
 def clean_title(title):
 
@@ -42,10 +16,6 @@ def clean_title(title):
 
     return title.strip()
 
-
-# ---------------------------
-# time helpers
-# ---------------------------
 
 def parse_time(t):
 
@@ -66,10 +36,6 @@ def format_time(sec):
 
     return f"{m:02d}:{s:06.3f}"
 
-
-# ---------------------------
-# avoid duplicate timestamps
-# ---------------------------
 
 def avoid_duplicate_time(lines):
 
@@ -99,9 +65,9 @@ def avoid_duplicate_time(lines):
     return fixed
 
 
-# ---------------------------
-# convert ttml (لم يتم تعديله)
-# ---------------------------
+# -------------------------
+# convert_ttml (لم يتم تعديله)
+# -------------------------
 
 def convert_ttml(ttml):
 
@@ -179,33 +145,11 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-# ---------------------------
-# get song info youtube
-# ---------------------------
+# -------------------------
+# استخراج اسم الأغنية من أي رابط
+# -------------------------
 
-def get_song_info(video_id):
-
-    watch = yt.get_watch_playlist(video_id)
-
-    track = watch["tracks"][0]
-
-    title = track.get("title")
-    artist = track.get("artists", [{}])[0].get("name")
-
-    duration = track.get("duration_seconds", 0)
-
-    album = None
-    if "album" in track:
-        album = track["album"]["name"]
-
-    return title, artist, album, duration
-
-
-# ---------------------------
-# spotify parser
-# ---------------------------
-
-def get_spotify_info(url):
+def extract_song_info(url):
 
     r = requests.get(url)
     html = r.text
@@ -213,26 +157,8 @@ def get_spotify_info(url):
     title = re.search(r'<meta property="og:title" content="(.*?)"', html)
     artist = re.search(r'<meta name="music:musician_description" content="(.*?)"', html)
 
-    if title:
-        title = title.group(1)
-
-    if artist:
-        artist = artist.group(1)
-
-    return title, artist, None, None
-
-
-# ---------------------------
-# apple music parser
-# ---------------------------
-
-def get_apple_info(url):
-
-    r = requests.get(url)
-    html = r.text
-
-    title = re.search(r'<meta property="og:title" content="(.*?)"', html)
-    artist = re.search(r'<meta name="apple:title" content="(.*?)"', html)
+    if not artist:
+        artist = re.search(r'<meta property="og:description" content="(.*?)"', html)
 
     if title:
         title = title.group(1)
@@ -240,12 +166,12 @@ def get_apple_info(url):
     if artist:
         artist = artist.group(1)
 
-    return title, artist, None, None
+    return title, artist
 
 
-# ---------------------------
-# lyrics api
-# ---------------------------
+# -------------------------
+# طلب الكلمات من Apple Music API
+# -------------------------
 
 def request_lyrics(params):
 
@@ -257,26 +183,28 @@ def request_lyrics(params):
 
         data = r.json()
 
-        if data and data.get("ttml"):
-            return data["ttml"]
+        if not data:
+            return None
+
+        if data.get("ttml"):
+            return ("ttml", data["ttml"])
+
+        if data.get("lyrics"):
+            return ("txt", data["lyrics"])
 
     return None
 
 
-def get_lyrics(title, artist, duration, album):
+def get_lyrics(title, artist):
 
     attempts = [
 
-        {"s": title, "a": artist, "d": duration, "al": album},
-        {"s": title, "a": artist, "d": duration},
         {"s": title, "a": artist},
         {"s": title}
 
     ]
 
     for params in attempts:
-
-        params = {k: v for k, v in params.items() if v}
 
         lyrics = request_lyrics(params)
 
@@ -286,9 +214,9 @@ def get_lyrics(title, artist, duration, album):
     return None
 
 
-# ---------------------------
+# -------------------------
 # telegram handler
-# ---------------------------
+# -------------------------
 
 @bot.message_handler(func=lambda m: True)
 def handle(message):
@@ -297,47 +225,42 @@ def handle(message):
 
     try:
 
-        # youtube
-        if "youtu" in text:
+        if "http" not in text:
 
-            video_id = extract_video_id(text)
-
-            if not video_id:
-                bot.reply_to(message, "❌ لم أستطع استخراج ID")
-                return
-
-            title, artist, album, duration = get_song_info(video_id)
-
-        # spotify
-        elif "spotify.com" in text:
-
-            title, artist, album, duration = get_spotify_info(text)
-
-        # apple music
-        elif "music.apple.com" in text:
-
-            title, artist, album, duration = get_apple_info(text)
-
-        else:
-
-            bot.reply_to(message, "❌ أرسل رابط من YouTube أو Spotify أو Apple Music")
+            bot.reply_to(message, "❌ أرسل رابط أغنية")
             return
 
+        title, artist = extract_song_info(text)
+
+        if not title:
+
+            bot.send_message(message.chat.id, "❌ لم أستطع استخراج اسم الأغنية")
+            return
 
         title = clean_title(title)
 
         bot.reply_to(
             message,
-            f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات..."
+            f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات من Apple Music..."
         )
 
-        ttml = get_lyrics(title, artist, duration, album)
+        result = get_lyrics(title, artist)
 
-        if not ttml:
+        if not result:
+
             bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
             return
 
-        lyrics = convert_ttml(ttml)
+        typ, data = result
+
+        if typ == "ttml":
+
+            lyrics = convert_ttml(data)
+
+        else:
+
+            lyrics = data
+
 
         with open("lyrics.txt", "w", encoding="utf-8") as f:
             f.write(lyrics)
