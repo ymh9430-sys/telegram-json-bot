@@ -2,29 +2,11 @@ import telebot
 import requests
 import re
 import xml.etree.ElementTree as ET
-import json
 
-BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
+BOT_TOKEN = "PUT_TOKEN_HERE"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-
-# ---------------------------
-# تنظيف العنوان
-# ---------------------------
-
-def clean_title(title):
-
-    title = re.sub(r"\(.*?\)", "", title)
-    title = re.sub(r"\[.*?\]", "", title)
-    title = re.sub(r"-.*", "", title)
-
-    return title.strip()
-
-
-# ---------------------------
-# time helpers
-# ---------------------------
 
 def parse_time(t):
 
@@ -45,10 +27,6 @@ def format_time(sec):
 
     return f"{m:02d}:{s:06.3f}"
 
-
-# ---------------------------
-# منع تكرار التوقيت
-# ---------------------------
 
 def avoid_duplicate_time(lines):
 
@@ -78,9 +56,7 @@ def avoid_duplicate_time(lines):
     return fixed
 
 
-# ---------------------------
-# convert_ttml (بدون تعديل)
-# ---------------------------
+# convert_ttml بدون تعديل
 
 def convert_ttml(ttml):
 
@@ -150,62 +126,43 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-# ---------------------------
-# استخراج بيانات الأغنية
-# ---------------------------
+# استخراج track id من رابط apple music
 
-def extract_song_data(url):
+def extract_track_id(url):
+
+    m = re.search(r"i=(\d+)", url)
+
+    if m:
+        return m.group(1)
+
+    return None
+
+
+# جلب بيانات الأغنية من apple api
+
+def get_song_data(track_id):
+
+    url = f"https://itunes.apple.com/lookup?id={track_id}"
 
     r = requests.get(url)
-    html = r.text
 
-    data = {}
+    data = r.json()
 
-    match = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+    if data["resultCount"] == 0:
+        return None
 
-    if match:
+    track = data["results"][0]
 
-        try:
+    title = track["trackName"]
+    artist = track["artistName"]
+    album = track["collectionName"]
 
-            j = json.loads(match.group(1))
+    duration = round(track["trackTimeMillis"] / 1000)
 
-            if isinstance(j, list):
-                j = j[0]
-
-            data["title"] = j.get("name")
-
-            artist = j.get("byArtist")
-
-            if isinstance(artist, dict):
-                data["artist"] = artist.get("name")
-
-            album = j.get("inAlbum")
-
-            if isinstance(album, dict):
-                data["album"] = album.get("name")
-
-            duration = j.get("duration")
-
-            if duration:
-
-                duration = duration.replace("PT", "")
-
-                m = re.match(r"(\d+)M(\d+)S", duration)
-
-                if m:
-                    minutes = int(m.group(1))
-                    seconds = int(m.group(2))
-                    data["duration"] = minutes * 60 + seconds
-
-        except:
-            pass
-
-    return data
+    return title, artist, album, duration
 
 
-# ---------------------------
 # طلب الكلمات
-# ---------------------------
 
 def request_lyrics(title, artist, album, duration):
 
@@ -219,9 +176,6 @@ def request_lyrics(title, artist, album, duration):
     }
 
     r = requests.get(url, params=params)
-
-    if r.status_code != 200:
-        return None
 
     data = r.json()
 
@@ -237,31 +191,24 @@ def request_lyrics(title, artist, album, duration):
     return None
 
 
-# ---------------------------
-# telegram handler
-# ---------------------------
-
 @bot.message_handler(func=lambda m: True)
 def handle(message):
 
-    text = message.text.strip()
-
     try:
 
-        if "http" not in text:
+        url = message.text.strip()
 
-            bot.reply_to(message, "❌ أرسل رابط الأغنية")
+        track_id = extract_track_id(url)
+
+        if not track_id:
+
+            bot.reply_to(message, "❌ رابط Apple Music غير صالح")
             return
 
-        info = extract_song_data(text)
+        title, artist, album, duration = get_song_data(track_id)
 
-        title = clean_title(info.get("title"))
-        artist = info.get("artist")
-        album = info.get("album")
-        duration = info.get("duration")
-
-        bot.reply_to(
-            message,
+        bot.send_message(
+            message.chat.id,
             f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
         )
 
@@ -290,7 +237,7 @@ def handle(message):
 
     except Exception as e:
 
-        bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
+        bot.send_message(message.chat.id, f"❌ خطأ:\n{e}")
 
 
 bot.infinity_polling()
