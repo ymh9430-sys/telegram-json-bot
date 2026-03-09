@@ -2,15 +2,16 @@ import telebot
 import requests
 import re
 import xml.etree.ElementTree as ET
+import json
 
 BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 
-# -------------------------
-# تنظيف عنوان الأغنية
-# -------------------------
+# ---------------------------
+# تنظيف العنوان
+# ---------------------------
 
 def clean_title(title):
 
@@ -21,9 +22,9 @@ def clean_title(title):
     return title.strip()
 
 
-# -------------------------
+# ---------------------------
 # time helpers
-# -------------------------
+# ---------------------------
 
 def parse_time(t):
 
@@ -45,9 +46,9 @@ def format_time(sec):
     return f"{m:02d}:{s:06.3f}"
 
 
-# -------------------------
+# ---------------------------
 # منع تكرار التوقيت
-# -------------------------
+# ---------------------------
 
 def avoid_duplicate_time(lines):
 
@@ -77,9 +78,9 @@ def avoid_duplicate_time(lines):
     return fixed
 
 
-# -------------------------
-# convert_ttml (لم يتم تعديله)
-# -------------------------
+# ---------------------------
+# convert_ttml (بدون تعديل)
+# ---------------------------
 
 def convert_ttml(ttml):
 
@@ -124,10 +125,6 @@ def convert_ttml(ttml):
 
                     bg_line += f"<{b}>{text}<{e}>"
 
-                    tail = sub.tail
-                    if tail and tail.strip() == "":
-                        bg_line += " "
-
             else:
 
                 text = span.text
@@ -142,10 +139,6 @@ def convert_ttml(ttml):
 
                 main_line += f"<{b}>{text}<{e}>"
 
-                tail = span.tail
-                if tail and tail.strip() == "":
-                    main_line += " "
-
         if main_line:
             result.append(f"[{main_time}]{main_line}")
 
@@ -157,82 +150,96 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-# -------------------------
-# استخراج بيانات الأغنية من الرابط
-# -------------------------
+# ---------------------------
+# استخراج بيانات الأغنية
+# ---------------------------
 
-def extract_song_info(url):
+def extract_song_data(url):
 
     r = requests.get(url)
     html = r.text
 
-    title = None
-    artist = None
+    data = {}
 
-    m1 = re.search(r'<meta property="og:title" content="(.*?)"', html)
-    if m1:
-        title = m1.group(1)
+    match = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
 
-    m2 = re.search(r'<meta name="music:musician_description" content="(.*?)"', html)
-    if m2:
-        artist = m2.group(1)
+    if match:
 
-    if not artist:
-        m3 = re.search(r'<meta property="og:description" content="(.*?)"', html)
-        if m3:
-            artist = m3.group(1)
+        try:
 
-    return title, artist
+            j = json.loads(match.group(1))
+
+            if isinstance(j, list):
+                j = j[0]
+
+            data["title"] = j.get("name")
+
+            artist = j.get("byArtist")
+
+            if isinstance(artist, dict):
+                data["artist"] = artist.get("name")
+
+            album = j.get("inAlbum")
+
+            if isinstance(album, dict):
+                data["album"] = album.get("name")
+
+            duration = j.get("duration")
+
+            if duration:
+
+                duration = duration.replace("PT", "")
+
+                m = re.match(r"(\d+)M(\d+)S", duration)
+
+                if m:
+                    minutes = int(m.group(1))
+                    seconds = int(m.group(2))
+                    data["duration"] = minutes * 60 + seconds
+
+        except:
+            pass
+
+    return data
 
 
-# -------------------------
-# طلب الكلمات من Apple Music API
-# -------------------------
+# ---------------------------
+# طلب الكلمات
+# ---------------------------
 
-def request_lyrics(params):
+def request_lyrics(title, artist, album, duration):
 
     url = "https://lyrics-api.boidu.dev/getLyrics"
 
+    params = {
+        "s": title,
+        "a": artist,
+        "al": album,
+        "d": duration
+    }
+
     r = requests.get(url, params=params)
 
-    if r.status_code == 200:
+    if r.status_code != 200:
+        return None
 
-        data = r.json()
+    data = r.json()
 
-        if not data:
-            return None
+    if not data:
+        return None
 
-        if data.get("ttml"):
-            return ("ttml", data["ttml"])
+    if data.get("ttml"):
+        return ("ttml", data["ttml"])
 
-        if data.get("lyrics"):
-            return ("txt", data["lyrics"])
-
-    return None
-
-
-def get_lyrics(title, artist):
-
-    attempts = [
-
-        {"s": title, "a": artist},
-        {"s": title}
-
-    ]
-
-    for params in attempts:
-
-        lyrics = request_lyrics(params)
-
-        if lyrics:
-            return lyrics
+    if data.get("lyrics"):
+        return ("txt", data["lyrics"])
 
     return None
 
 
-# -------------------------
+# ---------------------------
 # telegram handler
-# -------------------------
+# ---------------------------
 
 @bot.message_handler(func=lambda m: True)
 def handle(message):
@@ -243,24 +250,22 @@ def handle(message):
 
         if "http" not in text:
 
-            bot.reply_to(message, "❌ أرسل رابط أغنية")
+            bot.reply_to(message, "❌ أرسل رابط الأغنية")
             return
 
-        title, artist = extract_song_info(text)
+        info = extract_song_data(text)
 
-        if not title:
-
-            bot.send_message(message.chat.id, "❌ لم أستطع استخراج اسم الأغنية")
-            return
-
-        title = clean_title(title)
+        title = clean_title(info.get("title"))
+        artist = info.get("artist")
+        album = info.get("album")
+        duration = info.get("duration")
 
         bot.reply_to(
             message,
-            f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات..."
+            f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
         )
 
-        result = get_lyrics(title, artist)
+        result = request_lyrics(title, artist, album, duration)
 
         if not result:
 
@@ -276,7 +281,6 @@ def handle(message):
         else:
 
             lyrics = data
-
 
         with open("lyrics.txt", "w", encoding="utf-8") as f:
             f.write(lyrics)
