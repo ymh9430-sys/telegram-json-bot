@@ -171,9 +171,9 @@ def get_song_data(track_id):
     artist = track["artistName"]
     album = track["collectionName"]
 
-    # تعديل single
+    # إزالة كلمة Single
     if album and "single" in album.lower():
-        album = title
+        album = re.split(r"[-–]", album)[0].strip()
 
     duration = round(track["trackTimeMillis"] / 1000)
 
