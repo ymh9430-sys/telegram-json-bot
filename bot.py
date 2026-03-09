@@ -167,7 +167,7 @@ def get_song_data(track_id):
 
     track = data["results"][0]
 
-    title = track["trackName"]
+    title = clean_song_title(track["trackName"])
     artist = track["artistName"]
     album = track["collectionName"]
 
