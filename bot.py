@@ -163,6 +163,15 @@ def clean_title(title):
     return title
 
 
+import requests
+import re
+
+def clean_title(title):
+    # حذف الأقواس لو فيها feat / from / with
+    title = re.sub(r"\s*\((?i:(feat\.?|from|with)[^)]*)\)", "", title).strip()
+    return title
+
+
 def get_song_data(track_id):
 
     url = f"https://itunes.apple.com/lookup?id={track_id}"
