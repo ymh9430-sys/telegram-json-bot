@@ -8,6 +8,10 @@ BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 
+# -------------------------
+# تنظيف عنوان الأغنية
+# -------------------------
+
 def clean_title(title):
 
     title = re.sub(r"\(.*?\)", "", title)
@@ -16,6 +20,10 @@ def clean_title(title):
 
     return title.strip()
 
+
+# -------------------------
+# time helpers
+# -------------------------
 
 def parse_time(t):
 
@@ -36,6 +44,10 @@ def format_time(sec):
 
     return f"{m:02d}:{s:06.3f}"
 
+
+# -------------------------
+# منع تكرار التوقيت
+# -------------------------
 
 def avoid_duplicate_time(lines):
 
@@ -146,7 +158,7 @@ def convert_ttml(ttml):
 
 
 # -------------------------
-# استخراج اسم الأغنية من أي رابط
+# استخراج بيانات الأغنية من الرابط
 # -------------------------
 
 def extract_song_info(url):
@@ -154,17 +166,21 @@ def extract_song_info(url):
     r = requests.get(url)
     html = r.text
 
-    title = re.search(r'<meta property="og:title" content="(.*?)"', html)
-    artist = re.search(r'<meta name="music:musician_description" content="(.*?)"', html)
+    title = None
+    artist = None
+
+    m1 = re.search(r'<meta property="og:title" content="(.*?)"', html)
+    if m1:
+        title = m1.group(1)
+
+    m2 = re.search(r'<meta name="music:musician_description" content="(.*?)"', html)
+    if m2:
+        artist = m2.group(1)
 
     if not artist:
-        artist = re.search(r'<meta property="og:description" content="(.*?)"', html)
-
-    if title:
-        title = title.group(1)
-
-    if artist:
-        artist = artist.group(1)
+        m3 = re.search(r'<meta property="og:description" content="(.*?)"', html)
+        if m3:
+            artist = m3.group(1)
 
     return title, artist
 
@@ -241,7 +257,7 @@ def handle(message):
 
         bot.reply_to(
             message,
-            f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات من Apple Music..."
+            f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات..."
         )
 
         result = get_lyrics(title, artist)
