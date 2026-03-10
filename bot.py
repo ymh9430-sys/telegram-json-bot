@@ -309,16 +309,40 @@ def request_lyrics(title, artist, album, duration):
 
 
 # =========================
-# قراءة إدخال يدوي
+# قراءة إدخال يدوي (المعدل فقط)
 # =========================
 
 def parse_manual(text):
 
+    # الصيغة الكاملة
+    # song | artist | album | duration
+    if "|" in text:
+
+        parts = [x.strip() for x in text.split("|")]
+
+        if len(parts) == 4:
+
+            title = parts[0]
+            artist = parts[1]
+            album = parts[2]
+
+            try:
+                duration = int(parts[3])
+            except:
+                return None
+
+            return title, artist, album, duration
+
+
+    # الصيغة القديمة
+    # song - artist
     m = re.match(r"(.+?)\s*-\s*(.+)", text)
 
     if m:
-        title = m.group(1)
-        artist = m.group(2)
+
+        title = m.group(1).strip()
+        artist = m.group(2).strip()
+
         return search_song(title, artist)
 
     return None
