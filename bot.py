@@ -184,12 +184,12 @@ def get_song_data(track_id):
 
     track = data["results"][0]
 
-    title = track["trackName"]
+    title = clean_title(track["trackName"])
     artist = track["artistName"]
     album = track["collectionName"]
 
-    # تنظيف اسم الأغنية
-    title = clean_title(title)
+    # تنظيف اسم الألبوم
+    album = clean_album(album)
 
     # تعديل single
     if album and "single" in album.lower():
