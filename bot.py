@@ -142,16 +142,17 @@ def convert_ttml(ttml):
 
 def extract_track_id(url):
 
+    # الشكل الأكثر شيوعاً
     m = re.search(r"[?&]i=(\d+)", url)
     if m:
         return m.group(1)
 
-    m = re.search(r"/id(\d+)", url)
+    # أحياناً يكون id في آخر الرابط
+    m = re.search(r"/(\d{6,})", url)
     if m:
         return m.group(1)
 
     return None
-
 
 # =========================
 # تنظيف البيانات
