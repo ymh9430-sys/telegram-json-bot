@@ -137,22 +137,21 @@ def convert_ttml(ttml):
 
 
 # =========================
-# استخراج track id من رابط Apple Music
+# استخراج track id من Apple
 # =========================
 
 def extract_track_id(url):
 
-    # الشكل الأكثر شيوعاً
     m = re.search(r"[?&]i=(\d+)", url)
     if m:
         return m.group(1)
 
-    # أحياناً يكون id في آخر الرابط
     m = re.search(r"/(\d{6,})", url)
     if m:
         return m.group(1)
 
     return None
+
 
 # =========================
 # تنظيف البيانات
@@ -176,7 +175,74 @@ def clean_album(album):
 
 
 # =========================
-# جلب بيانات الأغنية
+# استخراج عنوان من Spotify / YouTube
+# =========================
+
+def extract_title_artist_from_page(url):
+
+    r = requests.get(url)
+
+    m = re.search(r"<title>(.*?)</title>", r.text)
+
+    if not m:
+        return None
+
+    title = m.group(1)
+
+    title = title.replace(" - YouTube Music", "")
+    title = title.replace(" - YouTube", "")
+    title = title.replace(" | Spotify", "")
+
+    parts = title.split(" - ")
+
+    if len(parts) >= 2:
+        artist = parts[0].strip()
+        song = parts[1].strip()
+    else:
+        song = title.strip()
+        artist = ""
+
+    return song, artist
+
+
+# =========================
+# البحث في Apple عن الأغنية
+# =========================
+
+def search_song(title, artist):
+
+    query = f"{title} {artist}"
+
+    url = "https://itunes.apple.com/search"
+
+    params = {
+        "term": query,
+        "entity": "song",
+        "limit": 1
+    }
+
+    r = requests.get(url, params=params)
+    data = r.json()
+
+    if data["resultCount"] == 0:
+        return None
+
+    track = data["results"][0]
+
+    title = clean_title(track["trackName"])
+    artist = track["artistName"]
+    album = clean_album(track["collectionName"])
+
+    if album and "single" in album.lower():
+        album = title
+
+    duration = round(track["trackTimeMillis"] / 1000)
+
+    return title, artist, album, duration
+
+
+# =========================
+# جلب بيانات Apple مباشرة
 # =========================
 
 def get_song_data(track_id):
@@ -258,14 +324,25 @@ def handle(message):
 
         track_id = extract_track_id(url)
 
-        if not track_id:
-            bot.reply_to(message, "❌ أرسل رابط Apple Music صحيح")
-            return
+        if track_id:
 
+            song = get_song_data(track_id)
 
-        song = get_song_data(track_id)
+        else:
+
+            info = extract_title_artist_from_page(url)
+
+            if not info:
+                bot.send_message(message.chat.id, "❌ لم أستطع قراءة بيانات الرابط")
+                return
+
+            title, artist = info
+
+            song = search_song(title, artist)
+
 
         if not song:
+
             bot.send_message(message.chat.id, "❌ لم أستطع استخراج بيانات الأغنية")
             return
 
