@@ -142,12 +142,10 @@ def convert_ttml(ttml):
 
 def extract_track_id(url):
 
-    # شكل ?i=
     m = re.search(r"[?&]i=(\d+)", url)
     if m:
         return m.group(1)
 
-    # شكل /id123456
     m = re.search(r"/id(\d+)", url)
     if m:
         return m.group(1)
@@ -156,12 +154,8 @@ def extract_track_id(url):
 
 
 # =========================
-# جلب بيانات الأغنية من Apple
+# تنظيف البيانات
 # =========================
-
-import requests
-import re
-
 
 def clean_title(title):
 
@@ -179,6 +173,10 @@ def clean_album(album):
 
     return album.strip()
 
+
+# =========================
+# جلب بيانات الأغنية
+# =========================
 
 def get_song_data(track_id):
 
@@ -204,6 +202,8 @@ def get_song_data(track_id):
     duration = round(track["trackTimeMillis"] / 1000)
 
     return title, artist, album, duration
+
+
 # =========================
 # طلب الكلمات
 # =========================
@@ -252,33 +252,40 @@ def handle(message):
         track_id = extract_track_id(url)
 
         if not track_id:
-
             bot.reply_to(message, "❌ أرسل رابط Apple Music صحيح")
             return
 
-        title, artist, album, duration = get_song_data(track_id)
+
+        song = get_song_data(track_id)
+
+        if not song:
+            bot.send_message(message.chat.id, "❌ لم أستطع استخراج بيانات الأغنية")
+            return
+
+
+        title, artist, album, duration = song
+
 
         bot.send_message(
             message.chat.id,
             f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
         )
 
+
         result = request_lyrics(title, artist, album, duration)
 
         if not result:
-
             bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
             return
+
 
         typ, data = result
 
         if typ == "ttml":
-
             lyrics = convert_ttml(data)
-
         else:
-
             lyrics = data
+
 
         with open("lyrics.txt", "w", encoding="utf-8") as f:
             f.write(lyrics)
