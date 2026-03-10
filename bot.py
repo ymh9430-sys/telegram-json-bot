@@ -189,13 +189,19 @@ def get_song_data(track_id):
     if data["resultCount"] == 0:
         return None
 
-    track = data["results"][0]
+    track = None
+
+    for item in data["results"]:
+        if item.get("kind") == "song":
+            track = item
+            break
+
+    if not track:
+        return None
 
     title = clean_title(track["trackName"])
     artist = track["artistName"]
-    album = track["collectionName"]
-
-    album = clean_album(album)
+    album = clean_album(track["collectionName"])
 
     if album and "single" in album.lower():
         album = title
