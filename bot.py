@@ -142,8 +142,13 @@ def convert_ttml(ttml):
 
 def extract_track_id(url):
 
-    m = re.search(r"i=(\d+)", url)
+    # شكل ?i=
+    m = re.search(r"[?&]i=(\d+)", url)
+    if m:
+        return m.group(1)
 
+    # شكل /id123456
+    m = re.search(r"/id(\d+)", url)
     if m:
         return m.group(1)
 
