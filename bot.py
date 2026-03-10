@@ -103,6 +103,10 @@ def convert_ttml(ttml):
 
                     bg_line += f"<{b}>{text}<{e}>"
 
+                    tail = sub.tail
+                    if tail and tail.strip() == "":
+                        bg_line += " "
+
             else:
 
                 text = span.text
@@ -117,6 +121,10 @@ def convert_ttml(ttml):
 
                 main_line += f"<{b}>{text}<{e}>"
 
+                tail = span.tail
+                if tail and tail.strip() == "":
+                    main_line += " "
+
         if main_line:
             result.append(f"[{main_time}]{main_line}")
 
@@ -126,6 +134,8 @@ def convert_ttml(ttml):
     result = avoid_duplicate_time(result)
 
     return "\n".join(result)
+
+
 
 
 # =========================
