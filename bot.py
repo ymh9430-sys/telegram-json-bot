@@ -157,19 +157,22 @@ def extract_track_id(url):
 import requests
 import re
 
-def clean_title(title):
-    # حذف الأقواس لو فيها feat / from / with
-    title = re.sub(r"\s*\((?i:(feat\.?|from|with)[^)]*)\)", "", title).strip()
-    return title
-
-
-import requests
-import re
 
 def clean_title(title):
-    # حذف الأقواس لو فيها feat / from / with
-    title = re.sub(r"\s*\((?i:(feat\.?|from|with)[^)]*)\)", "", title).strip()
-    return title
+
+    title = re.sub(r"\s*\((?i:(feat\.?|from|with)[^)]*)\)", "", title)
+
+    return title.strip()
+
+
+def clean_album(album):
+
+    if not album:
+        return album
+
+    album = re.sub(r"\s*\([^)]*\)", "", album)
+
+    return album.strip()
 
 
 def get_song_data(track_id):
@@ -188,10 +191,8 @@ def get_song_data(track_id):
     artist = track["artistName"]
     album = track["collectionName"]
 
-    # تنظيف اسم الألبوم
     album = clean_album(album)
 
-    # تعديل single
     if album and "single" in album.lower():
         album = title
 
