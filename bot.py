@@ -141,10 +141,8 @@ def convert_ttml(ttml):
 # =========================
 # تنظيف البيانات
 # =========================
-
 def clean_title(title):
 
-    # حذف (feat...) (ft...) (with...) (from...)
     title = re.sub(
         r"\s*\((?i:(feat\.?|ft\.?|with|from)[^)]*)\)",
         "",
@@ -152,6 +150,16 @@ def clean_title(title):
     )
 
     return title.strip()
+
+
+def clean_album(album):
+
+    if not album:
+        return album
+
+    album = re.sub(r"\s*\([^)]*\)", "", album)
+
+    return album.strip()
 
 # =========================
 # Apple ID
