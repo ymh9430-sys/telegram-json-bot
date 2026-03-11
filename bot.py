@@ -144,20 +144,14 @@ def convert_ttml(ttml):
 
 def clean_title(title):
 
-    title = re.sub(r"\s*\((?i:(feat\.?|from|with)[^)]*)\)", "", title)
+    # حذف (feat...) (ft...) (with...) (from...)
+    title = re.sub(
+        r"\s*\((?i:(feat\.?|ft\.?|with|from)[^)]*)\)",
+        "",
+        title
+    )
 
     return title.strip()
-
-
-def clean_album(album):
-
-    if not album:
-        return album
-
-    album = re.sub(r"\s*\([^)]*\)", "", album)
-
-    return album.strip()
-
 
 # =========================
 # Apple ID
@@ -238,10 +232,13 @@ def search_song(title, artist):
     artist = track["artistName"]
     album = clean_album(track["collectionName"])
 
+    # لو الألبوم سينجل نخليه اسم الأغنية
+    if album and "single" in album.lower():
+        album = title
+
     duration = round(track["trackTimeMillis"] / 1000)
 
     return title, artist, album, duration
-
 
 # =========================
 # استخراج عنوان من صفحات
