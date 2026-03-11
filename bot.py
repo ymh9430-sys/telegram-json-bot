@@ -319,7 +319,46 @@ def request_lyrics(title, artist, album, duration):
 
 def parse_manual(text):
 
-    # الصيغة الكاملة
+    # دعم الشكل الجديد
+    # 🎵
+    # 👤
+    # 💿
+    # ⏱
+
+    if "🎵" in text and "👤" in text:
+
+        title = None
+        artist = None
+        album = None
+        duration = None
+
+        lines = text.splitlines()
+
+        for line in lines:
+
+            line = line.strip()
+
+            if line.startswith("🎵"):
+                title = line.replace("🎵", "").strip()
+
+            elif line.startswith("👤"):
+                artist = line.replace("👤", "").strip()
+
+            elif line.startswith("💿"):
+                album = line.replace("💿", "").strip()
+
+            elif line.startswith("⏱"):
+                d = line.replace("⏱", "").replace("s", "").strip()
+                try:
+                    duration = int(d)
+                except:
+                    duration = None
+
+        if title and artist and album and duration:
+            return title, artist, album, duration
+
+
+    # الصيغة القديمة الكاملة
     # song | artist | album | duration
     if "|" in text:
 
