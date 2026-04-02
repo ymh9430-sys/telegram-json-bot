@@ -3,7 +3,8 @@ import requests
 import re
 import xml.etree.ElementTree as ET
 
-BOT_TOKEN = "8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk"
+import os
+BOT_TOKEN = os.getenv("8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -459,3 +460,18 @@ def handle(message):
 
 
 bot.infinity_polling()
+
+
+from flask import Flask
+import threading
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running"
+
+def run_web():
+    app.run(host="0.0.0.0", port=10000)
+
+threading.Thread(target=run_web).start()
