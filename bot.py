@@ -260,7 +260,8 @@ def request_lyrics_lyricsplus(title, artist, album, duration):
     data = r.json()
     if not data:
         return None
-    if data.get("lyrics"):
+    lyrics = data.get("lyrics")
+    if lyrics is not None and len(lyrics) > 0:
         return ("json", data, "LyricsPlus")
     return None
 
@@ -346,37 +347,46 @@ def handle(message):
             f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
         )
 
-        # الأساسي أولاً
-        result = request_lyrics(title, artist, album, duration)
+        # جيب من الاتنين مع بعض
+        result_apple = request_lyrics(title, artist, album, duration)
+        result_plus  = request_lyrics_lyricsplus(title, artist, album, duration)
 
-        # لو مفيش، جرب lyricsplus
-        if not result:
-            result = request_lyrics_lyricsplus(title, artist, album, duration)
-
-        if not result:
+        if not result_apple and not result_plus:
             bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
             return
 
-        typ, data, source = result
+        files_sent = 0
 
-        if typ == "ttml":
-            lyrics = convert_ttml(data)
-        elif typ == "json":
+        if result_apple:
+            typ, data, source = result_apple
+            if typ == "ttml":
+                lyrics = convert_ttml(data)
+            else:
+                lyrics = data
+            file_content = f"[Source: {source}]\n\n{lyrics}"
+            with open("lyrics_apple.txt", "w", encoding="utf-8") as f:
+                f.write(file_content)
+            with open("lyrics_apple.txt", "rb") as f:
+                bot.send_document(
+                    message.chat.id,
+                    f,
+                    caption=f"📄 المصدر: {source}"
+                )
+            files_sent += 1
+
+        if result_plus:
+            typ, data, source = result_plus
             lyrics = convert_json_lyrics(data)
-        else:
-            lyrics = data
-
-        file_content = f"[Source: {source}]\n\n{lyrics}"
-
-        with open("lyrics.txt", "w", encoding="utf-8") as f:
-            f.write(file_content)
-
-        with open("lyrics.txt", "rb") as f:
-            bot.send_document(
-                message.chat.id,
-                f,
-                caption=f"📄 المصدر: {source}"
-            )
+            file_content = f"[Source: {source}]\n\n{lyrics}"
+            with open("lyrics_plus.txt", "w", encoding="utf-8") as f:
+                f.write(file_content)
+            with open("lyrics_plus.txt", "rb") as f:
+                bot.send_document(
+                    message.chat.id,
+                    f,
+                    caption=f"📄 المصدر: {source}"
+                )
+            files_sent += 1
 
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
