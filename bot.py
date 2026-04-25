@@ -111,7 +111,9 @@ def convert_json_lyrics(data):
             syl_start = format_time(syl_time_ms / 1000)
             syl_end = format_time(syl_end_ms / 1000)
             text = syl.get("text", "")
-            line_str += f"<{syl_start}>{text}<{syl_end}>"
+            stripped = text.rstrip(" ")
+            trailing = text[len(stripped):]
+            line_str += f"<{syl_start}>{stripped}<{syl_end}>{trailing}"
         if line_str:
             result.append(f"[{line_start}]{line_str}")
     result = avoid_duplicate_time(result)
