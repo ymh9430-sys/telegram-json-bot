@@ -4,7 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 
 import os
-BOT_TOKEN = os.getenv("8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -137,151 +137,79 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 
-
-
 # =========================
-# تنظيف البيانات
-# =========================
-def clean_title(title):
-
-    title = re.sub(
-        r"\s*\((?i:(feat\.?|ft\.?|with|from)[^)]*)\)",
-        "",
-        title
-    )
-
-    return title.strip()
-
-
-def clean_album(album):
-
-    if not album:
-        return album
-
-    album = re.sub(r"\s*\([^)]*\)", "", album)
-
-    return album.strip()
-
-# =========================
-# Apple ID
+# LyricsPlus request
 # =========================
 
-def extract_track_id(url):
+def request_lyricsplus(title, artist, album, duration):
 
-    m = re.search(r"[?&]i=(\d+)", url)
-    if m:
-        return m.group(1)
-
-    m = re.search(r"/(\d{6,})", url)
-    if m:
-        return m.group(1)
-
-    return None
-
-
-# =========================
-# Apple lookup
-# =========================
-
-def get_song_data(track_id):
-
-    url = f"https://itunes.apple.com/lookup?id={track_id}"
-
-    r = requests.get(url)
-    data = r.json()
-
-    if data["resultCount"] == 0:
-        return None
-
-    track = None
-
-    for item in data["results"]:
-        if item.get("kind") == "song":
-            track = item
-            break
-
-    if not track:
-        return None
-
-    title = clean_title(track["trackName"])
-    artist = track["artistName"]
-    album = clean_album(track["collectionName"])
-
-    if album and "single" in album.lower():
-        album = title
-
-    duration = round(track["trackTimeMillis"] / 1000)
-
-    return title, artist, album, duration
-
-
-# =========================
-# Apple search
-# =========================
-
-def search_song(title, artist):
-
-    url = "https://itunes.apple.com/search"
+    url = "https://lyricsplus.prjktla.my.id/v2/lyrics/get"
 
     params = {
-        "term": f"{title} {artist}",
-        "entity": "song",
-        "limit": 1
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "duration": duration
     }
 
     r = requests.get(url, params=params)
+
+    if r.status_code != 200:
+        return None
+
     data = r.json()
 
-    if data["resultCount"] == 0:
+    if not data or not data.get("lyrics"):
         return None
 
-    track = data["results"][0]
+    return data
 
-    title = clean_title(track["trackName"])
-    artist = track["artistName"]
-    album = clean_album(track["collectionName"])
-
-    # لو الألبوم سينجل نخليه اسم الأغنية
-    if album and "single" in album.lower():
-        album = title
-
-    duration = round(track["trackTimeMillis"] / 1000)
-
-    return title, artist, album, duration
 
 # =========================
-# استخراج عنوان من صفحات
+# LyricsPlus converter (مطابق لناتج TTML)
 # =========================
 
-def extract_title_artist_from_page(url):
+def convert_lyricsplus_to_lrc(data):
 
-    r = requests.get(url)
-
-    m = re.search(r"<title>(.*?)</title>", r.text)
-
-    if not m:
+    lines = data.get("lyrics", [])
+    if not lines:
         return None
 
-    title = m.group(1)
+    result = []
 
-    title = title.replace(" - YouTube Music", "")
-    title = title.replace(" - YouTube", "")
-    title = title.replace(" | Spotify", "")
+    for line in lines:
 
-    parts = title.split(" - ")
+        words = line.get("syllabus") or []
+        if not words:
+            continue
 
-    if len(parts) >= 2:
-        artist = parts[0].strip()
-        song = parts[1].strip()
-    else:
-        song = title.strip()
-        artist = ""
+        main_line = ""
+        main_time = None
 
-    return song, artist
+        for w in words:
+
+            text = w.get("text", "")
+            if not text.strip():
+                continue
+
+            b = format_time(w.get("time", 0) / 1000)
+            e = format_time((w.get("time", 0) + w.get("duration", 0)) / 1000)
+
+            if not main_time:
+                main_time = b
+
+            main_line += f"<{b}>{text}<{e}>"
+
+        if main_line and main_time:
+            result.append(f"[{main_time}]{main_line}")
+
+    result = avoid_duplicate_time(result)
+
+    return "\n".join(result)
 
 
 # =========================
-# طلب الكلمات
+# المصدر الأساسي (Boidu)
 # =========================
 
 def request_lyrics(title, artist, album, duration):
@@ -315,85 +243,6 @@ def request_lyrics(title, artist, album, duration):
 
 
 # =========================
-# قراءة إدخال يدوي (المعدل فقط)
-# =========================
-
-def parse_manual(text):
-
-    # دعم الشكل الجديد
-    # 🎵
-    # 👤
-    # 💿
-    # ⏱
-
-    if "🎵" in text and "👤" in text:
-
-        title = None
-        artist = None
-        album = None
-        duration = None
-
-        lines = text.splitlines()
-
-        for line in lines:
-
-            line = line.strip()
-
-            if line.startswith("🎵"):
-                title = line.replace("🎵", "").strip()
-
-            elif line.startswith("👤"):
-                artist = line.replace("👤", "").strip()
-
-            elif line.startswith("💿"):
-                album = line.replace("💿", "").strip()
-
-            elif line.startswith("⏱"):
-                d = line.replace("⏱", "").replace("s", "").strip()
-                try:
-                    duration = int(d)
-                except:
-                    duration = None
-
-        if title and artist and album and duration:
-            return title, artist, album, duration
-
-
-    # الصيغة القديمة الكاملة
-    # song | artist | album | duration
-    if "|" in text:
-
-        parts = [x.strip() for x in text.split("|")]
-
-        if len(parts) == 4:
-
-            title = parts[0]
-            artist = parts[1]
-            album = parts[2]
-
-            try:
-                duration = int(parts[3])
-            except:
-                return None
-
-            return title, artist, album, duration
-
-
-    # الصيغة القديمة
-    # song - artist
-    m = re.match(r"(.+?)\s*-\s*(.+)", text)
-
-    if m:
-
-        title = m.group(1).strip()
-        artist = m.group(2).strip()
-
-        return search_song(title, artist)
-
-    return None
-
-
-# =========================
 # handler
 # =========================
 
@@ -404,52 +253,56 @@ def handle(message):
 
         text = message.text.strip()
 
-        if text.startswith("http"):
+        parts = text.split(" - ")
 
-            track_id = extract_track_id(text)
-
-            if track_id:
-                song = get_song_data(track_id)
-            else:
-                info = extract_title_artist_from_page(text)
-
-                if not info:
-                    bot.send_message(message.chat.id, "❌ لم أستطع قراءة الرابط")
-                    return
-
-                title, artist = info
-                song = search_song(title, artist)
-
-        else:
-
-            song = parse_manual(text)
-
-        if not song:
-            bot.send_message(message.chat.id, "❌ لم أستطع استخراج بيانات الأغنية")
+        if len(parts) != 2:
+            bot.send_message(message.chat.id, "❌ اكتب بالشكل: song - artist")
             return
 
-        title, artist, album, duration = song
+        title = parts[0].strip()
+        artist = parts[1].strip()
+        album = ""
+        duration = 0
 
         bot.send_message(
             message.chat.id,
-            f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
+            f"🎵 {title}\n👤 {artist}\n\nجاري جلب الكلمات..."
         )
+
+        source = "Boidu"
 
         result = request_lyrics(title, artist, album, duration)
 
-        if not result:
-            bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
-            return
+        if result:
+            typ, data = result
 
-        typ, data = result
+            if typ == "ttml":
+                lyrics = convert_ttml(data)
+            else:
+                lyrics = data
 
-        if typ == "ttml":
-            lyrics = convert_ttml(data)
         else:
-            lyrics = data
+            lp = request_lyricsplus(title, artist, album, duration)
+
+            if not lp:
+                bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
+                return
+
+            lyrics = convert_lyricsplus_to_lrc(lp)
+
+            if not lyrics:
+                bot.send_message(message.chat.id, "❌ فشل تحويل الكلمات")
+                return
+
+            source = "LyricsPlus"
 
         with open("lyrics.txt", "w", encoding="utf-8") as f:
             f.write(lyrics)
+
+        bot.send_message(
+            message.chat.id,
+            f"📄 المصدر: {source}"
+        )
 
         with open("lyrics.txt", "rb") as f:
             bot.send_document(message.chat.id, f)
@@ -460,18 +313,3 @@ def handle(message):
 
 
 bot.infinity_polling()
-
-
-from flask import Flask
-import threading
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is running"
-
-def run_web():
-    app.run(host="0.0.0.0", port=3000)
-
-threading.Thread(target=run_web).start()
