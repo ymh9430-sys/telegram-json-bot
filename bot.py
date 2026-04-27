@@ -146,8 +146,11 @@ def convert_json_lyrics(data):
         if not syllabus:
             continue
 
-        main_syls = []
-        bg_syls = []
+        main_line = ""
+        bg_line = ""
+
+        main_start = None
+        bg_start = None
 
         inside_bg = False
 
@@ -155,16 +158,37 @@ def convert_json_lyrics(data):
             text = syl.get("text", "")
             stripped = text.strip()
 
+            start_ms = syl.get("time", 0)
+            dur_ms = syl.get("duration", 0)
+
+            start = format_time(start_ms / 1000)
+            end = format_time((start_ms + dur_ms) / 1000)
+
+            # detect bg
             if "(" in stripped:
                 inside_bg = True
 
             if inside_bg:
-                bg_syls.append(syl)
+                if bg_start is None:
+                    bg_start = start
+                bg_line += f"<{start}>{stripped}<{end}>"
             else:
-                main_syls.append(syl)
+                if main_start is None:
+                    main_start = start
+                main_line += f"<{start}>{stripped}<{end}>"
 
             if ")" in stripped:
                 inside_bg = False
+
+        # ✅ نضيف كل سطر لو موجود
+        if main_line.strip():
+            result.append(f"[{main_start}]{main_line}")
+
+        if bg_line.strip():
+            result.append(f"[{bg_start}]{bg_line}")
+
+    result = avoid_duplicate_time(result)
+    return "\n".join(result)
 
         def build_line(syls):
             line_str = ""
