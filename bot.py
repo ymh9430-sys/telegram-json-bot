@@ -38,7 +38,50 @@ def avoid_duplicate_time(lines):
     return fixed
 
 # =========================
-# convert_ttml (بدون تعديل)
+# ✅ NEW: فصل الكورال (bg)
+# =========================
+def split_bg_lines(lines):
+    result = []
+
+    for line in lines:
+        if "(" not in line or ")" not in line:
+            result.append(line)
+            continue
+
+        main_time_match = re.match(r"\[(.*?)\]", line)
+        if not main_time_match:
+            result.append(line)
+            continue
+
+        main_time = main_time_match.group(1)
+
+        parts = re.split(r"(\(.*?\))", line)
+
+        main_part = ""
+        bg_part = ""
+
+        for part in parts:
+            if part.startswith("(") and part.endswith(")"):
+                bg_part += part
+            else:
+                main_part += part
+
+        main_part = re.sub(r"^\[.*?\]", "", main_part).strip()
+        bg_part = bg_part.strip()
+
+        bg_time_match = re.search(r"<(.*?)>", bg_part)
+        bg_time = bg_time_match.group(1) if bg_time_match else main_time
+
+        if main_part:
+            result.append(f"[{main_time}]{main_part}")
+
+        if bg_part:
+            result.append(f"[{bg_time}]{bg_part}")
+
+    return result
+
+# =========================
+# convert_ttml
 # =========================
 
 def convert_ttml(ttml):
@@ -91,7 +134,7 @@ def convert_ttml(ttml):
     return "\n".join(result)
 
 # =========================
-# convert_json_lyrics (جديد)
+# convert_json_lyrics
 # =========================
 
 def convert_json_lyrics(data):
@@ -102,7 +145,6 @@ def convert_json_lyrics(data):
         if not syllabus:
             continue
 
-        # انقسم الـ syllabus لسطر عادي وسطر bg (الكلام اللي بين أقواس)
         main_syls = []
         bg_syls = []
         for syl in syllabus:
@@ -138,11 +180,13 @@ def convert_json_lyrics(data):
             first_start, line_str = build_line(bg_syls)
             result.append(f"[{first_start}]{line_str}")
 
+    # ✅ التعديل هنا بس
+    result = split_bg_lines(result)
     result = avoid_duplicate_time(result)
+
     return "\n".join(result)
 
-# =========================
-# تنظيف البيانات
+# باقي الكود زي ما هو (مش متغير)
 # =========================
 
 def clean_title(title):
@@ -159,10 +203,6 @@ def clean_album(album):
     album = re.sub(r"\s*\([^)]*\)", "", album)
     return album.strip()
 
-# =========================
-# Apple ID
-# =========================
-
 def extract_track_id(url):
     m = re.search(r"[?&]i=(\d+)", url)
     if m:
@@ -171,10 +211,6 @@ def extract_track_id(url):
     if m:
         return m.group(1)
     return None
-
-# =========================
-# Apple lookup
-# =========================
 
 def get_song_data(track_id):
     url = f"https://itunes.apple.com/lookup?id={track_id}"
@@ -197,10 +233,6 @@ def get_song_data(track_id):
     duration = round(track["trackTimeMillis"] / 1000)
     return title, artist, album, duration
 
-# =========================
-# Apple search
-# =========================
-
 def search_song(title, artist):
     url = "https://itunes.apple.com/search"
     params = {
@@ -221,10 +253,6 @@ def search_song(title, artist):
     duration = round(track["trackTimeMillis"] / 1000)
     return title, artist, album, duration
 
-# =========================
-# استخراج عنوان من صفحات
-# =========================
-
 def extract_title_artist_from_page(url):
     r = requests.get(url)
     m = re.search(r"<title>(.*?)</title>", r.text)
@@ -242,10 +270,6 @@ def extract_title_artist_from_page(url):
         song = title.strip()
         artist = ""
     return song, artist
-
-# =========================
-# طلب الكلمات - الأساسي
-# =========================
 
 def request_lyrics(title, artist, album, duration):
     url = "https://lyrics-api.boidu.dev/getLyrics"
@@ -267,10 +291,6 @@ def request_lyrics(title, artist, album, duration):
         return ("txt", data["lyrics"], "Apple Music")
     return None
 
-# =========================
-# طلب الكلمات - lyricsplus
-# =========================
-
 def request_lyrics_lyricsplus(title, artist, album, duration):
     url = "https://lyricsplus.prjktla.my.id/v2/lyrics/get"
     params = {
@@ -288,10 +308,6 @@ def request_lyrics_lyricsplus(title, artist, album, duration):
     if lyrics is not None and len(lyrics) > 0:
         return ("json", data, "LyricsPlus")
     return None
-
-# =========================
-# قراءة إدخال يدوي
-# =========================
 
 def parse_manual(text):
     if "🎵" in text and "👤" in text:
@@ -337,10 +353,6 @@ def parse_manual(text):
 
     return None
 
-# =========================
-# handler
-# =========================
-
 @bot.message_handler(func=lambda m: True)
 def handle(message):
     try:
@@ -371,7 +383,6 @@ def handle(message):
             f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
         )
 
-        # جيب من الاتنين مع بعض
         result_apple = request_lyrics(title, artist, album, duration)
         result_plus  = request_lyrics_lyricsplus(title, artist, album, duration)
 
@@ -389,11 +400,7 @@ def handle(message):
             with open("lyrics_apple.txt", "w", encoding="utf-8") as f:
                 f.write(file_content)
             with open("lyrics_apple.txt", "rb") as f:
-                bot.send_document(
-                    message.chat.id,
-                    f,
-                    caption=f"📄 المصدر: {source}"
-                )
+                bot.send_document(message.chat.id, f, caption=f"📄 المصدر: {source}")
 
         if result_plus:
             typ, data, source = result_plus
@@ -402,11 +409,7 @@ def handle(message):
             with open("lyrics_plus.txt", "w", encoding="utf-8") as f:
                 f.write(file_content)
             with open("lyrics_plus.txt", "rb") as f:
-                bot.send_document(
-                    message.chat.id,
-                    f,
-                    caption=f"📄 المصدر: {source}"
-                )
+                bot.send_document(message.chat.id, f, caption=f"📄 المصدر: {source}")
 
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
