@@ -99,23 +99,46 @@ def convert_json_lyrics(data):
     lyrics_list = data.get("lyrics", [])
     result = []
     for line in lyrics_list:
-        line_time_ms = line.get("time", 0)
-        line_time_sec = line_time_ms / 1000
-        line_start = format_time(line_time_sec)
         syllabus = line.get("syllabus", [])
-        line_str = ""
+        if not syllabus:
+            continue
+
+        # انقسم الـ syllabus لسطر عادي وسطر bg (الكلام اللي بين أقواس)
+        main_syls = []
+        bg_syls   = []
         for syl in syllabus:
-            syl_time_ms = syl.get("time", 0)
-            syl_dur_ms = syl.get("duration", 0)
-            syl_end_ms = syl_time_ms + syl_dur_ms
-            syl_start = format_time(syl_time_ms / 1000)
-            syl_end = format_time(syl_end_ms / 1000)
             text = syl.get("text", "")
-            stripped = text.rstrip(" ")
-            trailing = text[len(stripped):]
-            line_str += f"<{syl_start}>{stripped}<{syl_end}>{trailing}"
-        if line_str:
-            result.append(f"[{line_start}]{line_str}")
+            stripped_text = text.strip()
+            if stripped_text.startswith("(") and stripped_text.endswith(")"):
+                bg_syls.append(syl)
+            else:
+                main_syls.append(syl)
+
+        def build_line(syls):
+            line_str = ""
+            first_start = None
+            for syl in syls:
+                syl_time_ms  = syl.get("time", 0)
+                syl_dur_ms   = syl.get("duration", 0)
+                syl_end_ms   = syl_time_ms + syl_dur_ms
+                syl_start    = format_time(syl_time_ms / 1000)
+                syl_end      = format_time(syl_end_ms / 1000)
+                text         = syl.get("text", "")
+                stripped     = text.rstrip(" ")
+                trailing     = text[len(stripped):]
+                line_str    += f"<{syl_start}>{stripped}<{syl_end}>{trailing}"
+                if first_start is None:
+                    first_start = syl_start
+            return first_start, line_str
+
+        if main_syls:
+            first_start, line_str = build_line(main_syls)
+            result.append(f"[{first_start}]{line_str}")
+
+        if bg_syls:
+            first_start, line_str = build_line(bg_syls)
+            result.append(f"[{first_start}]{line_str}")
+
     result = avoid_duplicate_time(result)
     return "\n".join(result)
 
