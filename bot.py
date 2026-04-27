@@ -191,42 +191,14 @@ def convert_json_lyrics(data):
             first_start, line_str = build_line(bg_syls)
             result.append(f"[{first_start}]{line_str}")
 
-    result = avoid_duplicate_time(result)
-
-    return "\n".join(result)
-
-        def build_line(syls):
-            line_str = ""
-            first_start = None
-            for syl in syls:
-                syl_time_ms = syl.get("time", 0)
-                syl_dur_ms = syl.get("duration", 0)
-                syl_end_ms = syl_time_ms + syl_dur_ms
-                syl_start = format_time(syl_time_ms / 1000)
-                syl_end = format_time(syl_end_ms / 1000)
-                text = syl.get("text", "")
-                stripped = text.rstrip(" ")
-                trailing = text[len(stripped):]
-                line_str += f"<{syl_start}>{stripped}<{syl_end}>{trailing}"
-                if first_start is None:
-                    first_start = syl_start
-            return first_start, line_str
-
-        if main_syls:
-            first_start, line_str = build_line(main_syls)
-            result.append(f"[{first_start}]{line_str}")
-
-        if bg_syls:
-            first_start, line_str = build_line(bg_syls)
-            result.append(f"[{first_start}]{line_str}")
-
-    # ✅ التعديل هنا بس
+    # ✅ التعديل الصح
     result = split_bg_lines(result)
     result = avoid_duplicate_time(result)
 
     return "\n".join(result)
 
-# باقي الكود زي ما هو (مش متغير)
+# =========================
+# باقي الكود
 # =========================
 
 def clean_title(title):
