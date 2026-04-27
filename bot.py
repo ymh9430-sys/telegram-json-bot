@@ -164,7 +164,6 @@ def convert_json_lyrics(data):
             start = format_time(start_ms / 1000)
             end = format_time((start_ms + dur_ms) / 1000)
 
-            # detect bg
             if "(" in stripped:
                 inside_bg = True
 
@@ -180,7 +179,6 @@ def convert_json_lyrics(data):
             if ")" in stripped:
                 inside_bg = False
 
-        # ✅ نضيف كل سطر لو موجود
         if main_line.strip():
             result.append(f"[{main_start}]{main_line}")
 
