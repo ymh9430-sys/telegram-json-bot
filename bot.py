@@ -99,46 +99,21 @@ def convert_json_lyrics(data):
     lyrics_list = data.get("lyrics", [])
     result = []
     for line in lyrics_list:
+        line_time_ms = line.get("time", 0)
+        line_time_sec = line_time_ms / 1000
+        line_start = format_time(line_time_sec)
         syllabus = line.get("syllabus", [])
-        if not syllabus:
-            continue
-
-        # انقسم الـ syllabus لسطر عادي وسطر bg (الكلام اللي بين أقواس)
-        main_syls = []
-        bg_syls   = []
+        line_str = ""
         for syl in syllabus:
+            syl_time_ms = syl.get("time", 0)
+            syl_dur_ms = syl.get("duration", 0)
+            syl_end_ms = syl_time_ms + syl_dur_ms
+            syl_start = format_time(syl_time_ms / 1000)
+            syl_end = format_time(syl_end_ms / 1000)
             text = syl.get("text", "")
-            stripped_text = text.strip()
-            if stripped_text.startswith("(") and stripped_text.endswith(")"):
-                bg_syls.append(syl)
-            else:
-                main_syls.append(syl)
-
-        def build_line(syls):
-            line_str = ""
-            first_start = None
-            for syl in syls:
-                syl_time_ms  = syl.get("time", 0)
-                syl_dur_ms   = syl.get("duration", 0)
-                syl_end_ms   = syl_time_ms + syl_dur_ms
-                syl_start    = format_time(syl_time_ms / 1000)
-                syl_end      = format_time(syl_end_ms / 1000)
-                text         = syl.get("text", "")
-                stripped     = text.rstrip(" ")
-                trailing     = text[len(stripped):]
-                line_str    += f"<{syl_start}>{stripped}<{syl_end}>{trailing}"
-                if first_start is None:
-                    first_start = syl_start
-            return first_start, line_str
-
-        if main_syls:
-            first_start, line_str = build_line(main_syls)
-            result.append(f"[{first_start}]{line_str}")
-
-        if bg_syls:
-            first_start, line_str = build_line(bg_syls)
-            result.append(f"[{first_start}]{line_str}")
-
+            line_str += f"<{syl_start}>{text}<{syl_end}>"
+        if line_str:
+            result.append(f"[{line_start}]{line_str}")
     result = avoid_duplicate_time(result)
     return "\n".join(result)
 
@@ -285,8 +260,7 @@ def request_lyrics_lyricsplus(title, artist, album, duration):
     data = r.json()
     if not data:
         return None
-    lyrics = data.get("lyrics")
-    if lyrics is not None and len(lyrics) > 0:
+    if data.get("lyrics"):
         return ("json", data, "LyricsPlus")
     return None
 
@@ -372,46 +346,37 @@ def handle(message):
             f"🎵 {title}\n👤 {artist}\n💿 {album}\n⏱ {duration}s\n\nجاري جلب الكلمات..."
         )
 
-        # جيب من الاتنين مع بعض
-        result_apple = request_lyrics(title, artist, album, duration)
-        result_plus  = request_lyrics_lyricsplus(title, artist, album, duration)
+        # الأساسي أولاً
+        result = request_lyrics(title, artist, album, duration)
 
-        if not result_apple and not result_plus:
+        # لو مفيش، جرب lyricsplus
+        if not result:
+            result = request_lyrics_lyricsplus(title, artist, album, duration)
+
+        if not result:
             bot.send_message(message.chat.id, "❌ لم يتم العثور على كلمات")
             return
 
-        files_sent = 0
+        typ, data, source = result
 
-        if result_apple:
-            typ, data, source = result_apple
-            if typ == "ttml":
-                lyrics = convert_ttml(data)
-            else:
-                lyrics = data
-            file_content = f"[Source: {source}]\n\n{lyrics}"
-            with open("lyrics_apple.txt", "w", encoding="utf-8") as f:
-                f.write(file_content)
-            with open("lyrics_apple.txt", "rb") as f:
-                bot.send_document(
-                    message.chat.id,
-                    f,
-                    caption=f"📄 المصدر: {source}"
-                )
-            files_sent += 1
-
-        if result_plus:
-            typ, data, source = result_plus
+        if typ == "ttml":
+            lyrics = convert_ttml(data)
+        elif typ == "json":
             lyrics = convert_json_lyrics(data)
-            file_content = f"[Source: {source}]\n\n{lyrics}"
-            with open("lyrics_plus.txt", "w", encoding="utf-8") as f:
-                f.write(file_content)
-            with open("lyrics_plus.txt", "rb") as f:
-                bot.send_document(
-                    message.chat.id,
-                    f,
-                    caption=f"📄 المصدر: {source}"
-                )
-            files_sent += 1
+        else:
+            lyrics = data
+
+        file_content = f"[Source: {source}]\n\n{lyrics}"
+
+        with open("lyrics.txt", "w", encoding="utf-8") as f:
+            f.write(file_content)
+
+        with open("lyrics.txt", "rb") as f:
+            bot.send_document(
+                message.chat.id,
+                f,
+                caption=f"📄 المصدر: {source}"
+            )
 
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ خطأ:\n{str(e)}")
