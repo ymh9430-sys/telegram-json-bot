@@ -4,8 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 import os
 
-BOT_TOKEN = os.getenv("8509336206:AAHnNtM7e9CUeJYeUEZLJT8ZJMlJIeF8hYk")
-
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def parse_time(t):
@@ -424,6 +423,6 @@ def home():
     return "Bot is running"
 
 def run_web():
-    app.run(host="0.0.0.0", port=3000)
+app.run(host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
 
 threading.Thread(target=run_web).start()
