@@ -146,14 +146,26 @@ def convert_json_lyrics(data):
             continue
 
         main_syls = []
-        bg_syls = []
-        for syl in syllabus:
-            text = syl.get("text", "")
-            stripped_text = text.strip()
-            if stripped_text.startswith("(") and stripped_text.endswith(")"):
-                bg_syls.append(syl)
-            else:
-                main_syls.append(syl)
+bg_syls = []
+
+inside_bg = False
+
+for syl in syllabus:
+    text = syl.get("text", "")
+    stripped = text.strip()
+
+    # بداية bg
+    if "(" in stripped:
+        inside_bg = True
+
+    if inside_bg:
+        bg_syls.append(syl)
+    else:
+        main_syls.append(syl)
+
+    # نهاية bg
+    if ")" in stripped:
+        inside_bg = False
 
         def build_line(syls):
             line_str = ""
