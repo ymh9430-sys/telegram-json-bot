@@ -192,7 +192,9 @@ def convert_json_lyrics(data):
             start = format_time(start_ms / 1000)
             end = format_time((start_ms + dur_ms) / 1000)
 
-            word = text.strip()
+            # ✅ نفصل الكلمة عن المسافات اللي بعدها
+            stripped = text.rstrip(" ")
+            spaces = text[len(stripped):]  # المسافات الأصلية
 
             next_syl = syllabus[i + 1] if i + 1 < len(syllabus) else None
 
@@ -206,12 +208,12 @@ def convert_json_lyrics(data):
                 if main_start is None:
                     main_start = start
 
-                main_line += f"<{start}>{word}<{end}>"
+                main_line += f"<{start}>{stripped}<{end}>"
 
-                # ✅ مسافة بتوقيت (زي المثال بالظبط)
-                if next_syl:
+                # ✅ نحط المسافة بعد التوقيت
+                if spaces and next_syl:
                     next_start = format_time(next_syl.get("time", 0) / 1000)
-                    main_line += f"<{end}> <{next_start}>"
+                    main_line += f"<{end}>{spaces}<{next_start}>"
 
             # =========================
             # BG
@@ -220,11 +222,11 @@ def convert_json_lyrics(data):
                 if bg_start is None:
                     bg_start = start
 
-                bg_line += f"<{start}>{word}<{end}>"
+                bg_line += f"<{start}>{stripped}<{end}>"
 
-                if next_syl:
+                if spaces and next_syl:
                     next_start = format_time(next_syl.get("time", 0) / 1000)
-                    bg_line += f"<{end}> <{next_start}>"
+                    bg_line += f"<{end}>{spaces}<{next_start}>"
 
             if ")" in text:
                 inside_bg = False
