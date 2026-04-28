@@ -163,6 +163,7 @@ def convert_ttml(ttml):
 # convert_json_lyrics
 # =========================
 def convert_json_lyrics(data):
+def convert_json_lyrics(data):
     lyrics_list = data.get("lyrics", [])
     result = []
 
@@ -180,9 +181,8 @@ def convert_json_lyrics(data):
 
         inside_bg = False
 
-        for syl in syllabus:
+        for i, syl in enumerate(syllabus):
             text = syl.get("text", "")
-            stripped = text.strip()
 
             start_ms = syl.get("time", 0)
             dur_ms = syl.get("duration", 0)
@@ -190,22 +190,44 @@ def convert_json_lyrics(data):
             start = format_time(start_ms / 1000)
             end = format_time((start_ms + dur_ms) / 1000)
 
-            if "(" in stripped:
+            word = text.strip()
+
+            next_syl = syllabus[i + 1] if i + 1 < len(syllabus) else None
+
+            if "(" in text:
                 inside_bg = True
 
-            if inside_bg:
-                if bg_start is None:
-                    bg_start = start
-
-                bg_line += f"<{start}>{stripped}<{end}>"
-
-            else:
+            # =========================
+            # MAIN
+            # =========================
+            if not inside_bg:
                 if main_start is None:
                     main_start = start
 
-                main_line += f"<{start}>{stripped}<{end}>"
+                main_line += f"<{start}>{word}<{end}>"
 
-            if ")" in stripped:
+                # ✅ إضافة مسافة بتوقيت
+                if next_syl:
+                    next_start_ms = next_syl.get("time", 0)
+                    next_start = format_time(next_start_ms / 1000)
+                    main_line += f"<{end}> <{next_start}>"
+
+            # =========================
+            # BG
+            # =========================
+            else:
+                if bg_start is None:
+                    bg_start = start
+
+                bg_line += f"<{start}>{word}<{end}>"
+
+                # ✅ إضافة مسافة بتوقيت
+                if next_syl:
+                    next_start_ms = next_syl.get("time", 0)
+                    next_start = format_time(next_start_ms / 1000)
+                    bg_line += f"<{end}> <{next_start}>"
+
+            if ")" in text:
                 inside_bg = False
 
         if main_line.strip():
