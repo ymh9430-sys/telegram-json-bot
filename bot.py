@@ -183,7 +183,7 @@ def convert_json_lyrics(data):
 
         inside_bg = False
 
-        for i, syl in enumerate(syllabus):
+        for syl in syllabus:
             text = syl.get("text", "")
 
             start_ms = syl.get("time", 0)
@@ -192,9 +192,9 @@ def convert_json_lyrics(data):
             start = format_time(start_ms / 1000)
             end = format_time((start_ms + dur_ms) / 1000)
 
-            # ✅ نفصل الكلمة عن المسافات
+            # ✅ نفصل الكلمة عن المسافة
             stripped = text.rstrip(" ")
-            spaces = text[len(stripped):]
+            spaces = text[len(stripped):]  # المسافة الأصلية
 
             if "(" in text:
                 inside_bg = True
@@ -206,11 +206,8 @@ def convert_json_lyrics(data):
                 if main_start is None:
                     main_start = start
 
-                main_line += f"<{start}>{stripped}<{end}>"
-
-                # ✅ نحط المسافة بعد end فقط (بدون next_start)
-                if spaces:
-                    main_line += f"<{end}>{spaces}"
+                # ✅ نكتب end مرة واحدة + نحط المسافة بعده
+                main_line += f"<{start}>{stripped}<{end}>{spaces}"
 
             # =========================
             # BG
@@ -219,10 +216,7 @@ def convert_json_lyrics(data):
                 if bg_start is None:
                     bg_start = start
 
-                bg_line += f"<{start}>{stripped}<{end}>"
-
-                if spaces:
-                    bg_line += f"<{end}>{spaces}"
+                bg_line += f"<{start}>{stripped}<{end}>{spaces}"
 
             if ")" in text:
                 inside_bg = False
