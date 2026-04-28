@@ -162,7 +162,9 @@ def convert_ttml(ttml):
 # =========================
 # convert_json_lyrics
 # =========================
-def convert_json_lyrics(data):
+# =========================
+# convert_json_lyrics
+# =========================
 def convert_json_lyrics(data):
     lyrics_list = data.get("lyrics", [])
     result = []
@@ -206,10 +208,9 @@ def convert_json_lyrics(data):
 
                 main_line += f"<{start}>{word}<{end}>"
 
-                # ✅ إضافة مسافة بتوقيت
+                # ✅ مسافة بتوقيت (زي المثال بالظبط)
                 if next_syl:
-                    next_start_ms = next_syl.get("time", 0)
-                    next_start = format_time(next_start_ms / 1000)
+                    next_start = format_time(next_syl.get("time", 0) / 1000)
                     main_line += f"<{end}> <{next_start}>"
 
             # =========================
@@ -221,10 +222,8 @@ def convert_json_lyrics(data):
 
                 bg_line += f"<{start}>{word}<{end}>"
 
-                # ✅ إضافة مسافة بتوقيت
                 if next_syl:
-                    next_start_ms = next_syl.get("time", 0)
-                    next_start = format_time(next_start_ms / 1000)
+                    next_start = format_time(next_syl.get("time", 0) / 1000)
                     bg_line += f"<{end}> <{next_start}>"
 
             if ")" in text:
